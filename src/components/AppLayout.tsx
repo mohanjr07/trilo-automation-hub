@@ -99,7 +99,7 @@ export default function AppLayout() {
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
             alt="Magic Aisles"
-            style={{ height: "32px", width: "auto", maxWidth: "100%" }}
+            style={{ width: "140px", height: "auto" }}
             className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute" : "opacity-100")}
             fetchPriority="high"
             decoding="sync"
@@ -107,7 +107,7 @@ export default function AppLayout() {
           <img
             src={`${import.meta.env.BASE_URL}logo-dark.png`}
             alt="Magic Aisles"
-            style={{ height: "32px", width: "auto", maxWidth: "100%" }}
+            style={{ width: "140px", height: "auto" }}
             className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute")}
             fetchPriority="high"
             decoding="sync"
@@ -180,7 +180,7 @@ export default function AppLayout() {
               <img
                 src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="Magic Aisles"
-                style={{ height: "32px", width: "auto", maxWidth: "calc(100% - 40px)" }}
+                style={{ width: "140px", height: "auto" }}
                 className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute" : "opacity-100")}
                 fetchPriority="high"
                 decoding="sync"
@@ -188,7 +188,7 @@ export default function AppLayout() {
               <img
                 src={`${import.meta.env.BASE_URL}logo-dark.png`}
                 alt="Magic Aisles"
-                style={{ height: "32px", width: "auto", maxWidth: "calc(100% - 40px)" }}
+                style={{ width: "140px", height: "auto" }}
                 className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute")}
                 fetchPriority="high"
                 decoding="sync"
