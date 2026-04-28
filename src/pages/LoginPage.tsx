@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff } from "lucide-react";
@@ -22,17 +21,6 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isDark, setIsDark] = useState(() =>
-    typeof document !== "undefined" && document.documentElement.classList.contains("dark")
-  );
-
-  useEffect(() => {
-    const obs = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains("dark"));
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -68,18 +56,8 @@ export default function LoginPage() {
         className="w-full max-w-[420px] rounded-modal bg-card p-8 shadow-modal"
       >
         <div className="mb-8 text-center">
-          <div className="relative mx-auto mb-4 flex h-40 items-center justify-center">
-            <img
-              src={`${import.meta.env.BASE_URL}logo.png`}
-              alt="Magic Aisles"
-              className={cn("h-40 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0 m-auto" : "opacity-100")}
-            />
-            <img
-              src={`${import.meta.env.BASE_URL}logo-dark.png`}
-              alt="Magic Aisles"
-              className={cn("h-40 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0 m-auto")}
-            />
-          </div>
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Trilo Automation" className="mx-auto mb-4 h-40 object-contain" />
+          <h1 className="font-heading text-2xl font-bold text-ink-primary">TaskFlow</h1>
           <p className="mt-1 text-sm text-ink-muted">Organize work. Track everything.</p>
         </div>
 
