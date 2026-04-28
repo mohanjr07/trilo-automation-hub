@@ -32,6 +32,7 @@ import NotesPage from "@/pages/NotesPage";
 import InternDashboard from "@/pages/InternDashboard";
 import ProjectsPage from "@/pages/ProjectsPage";
 import OrganisationFlowPage from "@/pages/OrganisationFlowPage";
+import AssetsPage from "@/pages/AssetsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -86,6 +87,7 @@ const App = () => (
               <Route path="/intern-tasks" element={<ProtectedRoute allowedRoles={["intern"]}><TasksPage myTasksOnly /></ProtectedRoute>} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/notes" element={<NotesPage />} />
+              <Route path="/assets" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
 
