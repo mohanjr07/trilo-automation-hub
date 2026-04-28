@@ -93,21 +93,21 @@ export default function AppLayout() {
     <div className="flex min-h-screen bg-background">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r border-border bg-card z-30">
-        <div className="flex h-[60px] items-center gap-2 px-5 border-b border-border">
+        <div className="flex h-[60px] items-center border-b border-border px-3">
           {/* Both logos are always mounted — we just toggle visibility via CSS
               so the browser never has to re-fetch/decode on theme switch. */}
-          <div className="relative h-14 flex items-center">
+          <div className="relative w-full h-full flex items-center">
             <img
               src={`${import.meta.env.BASE_URL}logo.png`}
               alt="Magic Aisles"
-              className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
+              className={cn("w-full h-full object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
               fetchPriority="high"
               decoding="sync"
             />
             <img
               src={`${import.meta.env.BASE_URL}logo-dark.png`}
               alt="Magic Aisles"
-              className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
+              className={cn("w-full h-full object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
               fetchPriority="high"
               decoding="sync"
             />
@@ -176,20 +176,20 @@ export default function AppLayout() {
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="fixed inset-y-0 left-0 w-60 bg-card border-r border-border z-50 flex flex-col md:hidden"
           >
-            <div className="flex h-[60px] items-center justify-between px-5 border-b border-border">
-              <div className="flex items-center gap-2">
-                <div className="relative h-14 flex items-center">
+            <div className="flex h-[60px] items-center justify-between px-3 border-b border-border">
+              <div className="flex items-center gap-2 flex-1 h-full">
+                <div className="relative flex-1 h-full flex items-center">
                   <img
                     src={`${import.meta.env.BASE_URL}logo.png`}
                     alt="Magic Aisles"
-                    className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
+                    className={cn("w-full h-full object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
                     fetchPriority="high"
                     decoding="sync"
                   />
                   <img
                     src={`${import.meta.env.BASE_URL}logo-dark.png`}
                     alt="Magic Aisles"
-                    className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
+                    className={cn("w-full h-full object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
                     fetchPriority="high"
                     decoding="sync"
                   />
