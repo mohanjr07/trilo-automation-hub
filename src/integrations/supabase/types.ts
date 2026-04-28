@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      assets: {
+        Row: {
+          id: string
+          asset_name: string
+          asset_type: string
+          serial_number: string | null
+          holder_name: string | null
+          holder_id: string | null
+          status: string
+          notes: string | null
+          assigned_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          asset_name: string
+          asset_type?: string
+          serial_number?: string | null
+          holder_name?: string | null
+          holder_id?: string | null
+          status?: string
+          notes?: string | null
+          assigned_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          asset_name?: string
+          asset_type?: string
+          serial_number?: string | null
+          holder_name?: string | null
+          holder_id?: string | null
+          status?: string
+          notes?: string | null
+          assigned_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assets_holder_id_fkey"
+            columns: ["holder_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       holidays: {
         Row: {
           created_at: string | null
