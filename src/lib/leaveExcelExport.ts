@@ -147,7 +147,7 @@ export async function exportLeavesToExcel(args: LeaveExportArgs): Promise<void> 
 
   // ── Build the workbook ─────────────────────────────────────────────────────
   const wb = new ExcelJS.Workbook();
-  wb.creator = "TaskFlow";
+  wb.creator = "Magic Aisles";
   wb.created = new Date();
   const ws = wb.addWorksheet(`${monthName} ${year}`);
 
