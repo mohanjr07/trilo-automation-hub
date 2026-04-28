@@ -33,6 +33,8 @@ import InternDashboard from "@/pages/InternDashboard";
 import ProjectsPage from "@/pages/ProjectsPage";
 import OrganisationFlowPage from "@/pages/OrganisationFlowPage";
 import AssetsPage from "@/pages/AssetsPage";
+import KraKpiPage from "@/pages/KraKpiPage";
+import DocumentsPage from "@/pages/DocumentsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -88,6 +90,8 @@ const App = () => (
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/notes" element={<NotesPage />} />
               <Route path="/assets" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
+              <Route path="/kra-kpi" element={<KraKpiPage />} />
+              <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
 
