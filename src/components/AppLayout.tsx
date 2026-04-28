@@ -96,18 +96,18 @@ export default function AppLayout() {
         <div className="flex h-[60px] items-center gap-2 px-5 border-b border-border">
           {/* Both logos are always mounted — we just toggle visibility via CSS
               so the browser never has to re-fetch/decode on theme switch. */}
-          <div className="relative h-14 flex items-center">
+          <div className="relative h-10 flex items-center">
             <img
               src={`${import.meta.env.BASE_URL}logo.png`}
               alt="Magic Aisles"
-              className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
+              className={cn("h-10 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
               fetchPriority="high"
               decoding="sync"
             />
             <img
               src={`${import.meta.env.BASE_URL}logo-dark.png`}
               alt="Magic Aisles"
-              className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
+              className={cn("h-10 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
               fetchPriority="high"
               decoding="sync"
             />
@@ -178,18 +178,18 @@ export default function AppLayout() {
           >
             <div className="flex h-[60px] items-center justify-between px-5 border-b border-border">
               <div className="flex items-center gap-2">
-                <div className="relative h-14 flex items-center">
+                <div className="relative h-10 flex items-center">
                   <img
                     src={`${import.meta.env.BASE_URL}logo.png`}
                     alt="Magic Aisles"
-                    className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
+                    className={cn("h-10 object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute inset-0" : "opacity-100")}
                     fetchPriority="high"
                     decoding="sync"
                   />
                   <img
                     src={`${import.meta.env.BASE_URL}logo-dark.png`}
                     alt="Magic Aisles"
-                    className={cn("h-14 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
+                    className={cn("h-10 object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute inset-0")}
                     fetchPriority="high"
                     decoding="sync"
                   />
