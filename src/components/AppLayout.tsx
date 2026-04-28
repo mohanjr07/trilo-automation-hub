@@ -93,20 +93,22 @@ export default function AppLayout() {
     <div className="flex min-h-screen bg-background">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r border-border bg-card z-30">
-        <div className="flex h-[60px] items-center border-b border-border px-4">
+        <div className="flex h-[60px] items-center border-b border-border px-3">
           {/* Both logos are always mounted — we just toggle visibility via CSS
               so the browser never has to re-fetch/decode on theme switch. */}
           <img
             src={`${import.meta.env.BASE_URL}logo.png`}
             alt="Magic Aisles"
-            className={cn("w-full h-[44px] object-contain object-left transition-opacity duration-150", isDark ? "opacity-0 absolute" : "opacity-100")}
+            style={{ height: "32px", width: "auto", maxWidth: "100%" }}
+            className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute" : "opacity-100")}
             fetchPriority="high"
             decoding="sync"
           />
           <img
             src={`${import.meta.env.BASE_URL}logo-dark.png`}
             alt="Magic Aisles"
-            className={cn("w-full h-[44px] object-contain object-left transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute")}
+            style={{ height: "32px", width: "auto", maxWidth: "100%" }}
+            className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute")}
             fetchPriority="high"
             decoding="sync"
           />
@@ -174,18 +176,20 @@ export default function AppLayout() {
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="fixed inset-y-0 left-0 w-60 bg-card border-r border-border z-50 flex flex-col md:hidden"
           >
-            <div className="flex h-[60px] items-center justify-between px-4 border-b border-border">
+            <div className="flex h-[60px] items-center justify-between px-3 border-b border-border">
               <img
                 src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="Magic Aisles"
-                className={cn("h-[44px] w-auto object-contain object-left transition-opacity duration-150", isDark ? "opacity-0 absolute" : "opacity-100")}
+                style={{ height: "32px", width: "auto", maxWidth: "calc(100% - 40px)" }}
+                className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-0 absolute" : "opacity-100")}
                 fetchPriority="high"
                 decoding="sync"
               />
               <img
                 src={`${import.meta.env.BASE_URL}logo-dark.png`}
                 alt="Magic Aisles"
-                className={cn("h-[44px] w-auto object-contain object-left transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute")}
+                style={{ height: "32px", width: "auto", maxWidth: "calc(100% - 40px)" }}
+                className={cn("object-contain transition-opacity duration-150", isDark ? "opacity-100" : "opacity-0 absolute")}
                 fetchPriority="high"
                 decoding="sync"
               />
