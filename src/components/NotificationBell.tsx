@@ -52,7 +52,7 @@ export default function NotificationBell() {
 
   // Realtime subscription — fires both an in-app toast and (if allowed) a
   // native OS desktop notification (Windows Action Center / macOS Notification
-  // Center). Clicking the OS notification brings the TaskFlow window to the
+  // Center). Clicking the OS notification brings the Magic Aisles window to the
   // front and navigates to /notifications.
   useEffect(() => {
     if (!user) return;
@@ -67,14 +67,14 @@ export default function NotificationBell() {
         queryClient.invalidateQueries({ queryKey: ["notifications-bell"] });
         queryClient.invalidateQueries({ queryKey: ["notifications"] });
         const n = payload.new as any;
-        const title = n.title ?? "TaskFlow";
+        const title = n.title ?? "Magic Aisles";
         const body = n.body ?? "";
 
         // In-app toast (visible only when the window is open and focused).
         toast(title, { description: body });
 
         // Native desktop notification (visible regardless of window state —
-        // even when TaskFlow is hidden in the system tray).
+        // even when Magic Aisles is hidden in the system tray).
         if (
           typeof Notification !== "undefined" &&
           Notification.permission === "granted"
