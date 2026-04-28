@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, CheckSquare, Users, Calendar, BarChart3,
-  Settings, User, Bell, LogOut, Menu, X, Video, StickyNote, ClipboardList, FolderKanban, Network, Boxes,
+  Settings, User, Bell, LogOut, Menu, X, Video, StickyNote, ClipboardList, FolderKanban, Network, Boxes, Target, FileText,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import UserAvatar from "@/components/UserAvatar";
@@ -18,13 +18,15 @@ const adminNav: NavItem[] = [
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
+  { label: "Assets", path: "/assets", icon: Boxes },
+  { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
+  { label: "Documents", path: "/documents", icon: FileText },
   { label: "Users", path: "/users", icon: Users },
   { label: "Teams", path: "/teams", icon: Video },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Notes", path: "/notes", icon: StickyNote },
-  { label: "Assets", path: "/assets", icon: Boxes },
   { label: "Settings", path: "/settings", icon: Settings },
 ];
 
@@ -34,13 +36,15 @@ const managerNav: NavItem[] = [
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
   { label: "My Tasks", path: "/my-tasks", icon: ClipboardList },
+  { label: "Assets", path: "/assets", icon: Boxes },
+  { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
+  { label: "Documents", path: "/documents", icon: FileText },
   { label: "Teams", path: "/teams", icon: Video },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "My Leave", path: "/my-leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Notes", path: "/notes", icon: StickyNote },
-  { label: "Assets", path: "/assets", icon: Boxes },
   { label: "Settings", path: "/settings", icon: Settings },
 ];
 
@@ -49,6 +53,8 @@ const employeeNav: NavItem[] = [
   { label: "My Tasks", path: "/my-tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
+  { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
+  { label: "Documents", path: "/documents", icon: FileText },
   { label: "Teams", path: "/my-teams", icon: Video },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "Leave", path: "/my-leave", icon: Calendar },
@@ -61,6 +67,8 @@ const internNav: NavItem[] = [
   { label: "My Tasks", path: "/intern-tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
+  { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
+  { label: "Documents", path: "/documents", icon: FileText },
   { label: "Notes", path: "/notes", icon: StickyNote },
   { label: "Profile", path: "/profile", icon: User },
 ];
