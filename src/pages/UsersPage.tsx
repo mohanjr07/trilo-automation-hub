@@ -90,13 +90,8 @@ export default function UsersPage() {
 
   const deleteUser = useMutation({
     mutationFn: async (id: string) => {
-      const headers = await getFunctionAuthHeaders();
-      const { data, error } = await supabase.functions.invoke("admin-delete-user", {
-        body: { userId: id },
-        headers,
-      });
+      const { error } = await supabase.rpc("delete_app_user_by_id", { p_user_id: id });
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
     },
     onSuccess: async (_, deletedUserId) => {
       queryClient.setQueryData<any[]>(["users-profiles"], (current = []) =>
@@ -320,23 +315,24 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
         throw new Error("Temporary password is required");
       }
 
-      const { data: response, error } = await supabase.functions.invoke("admin-create-user", {
-        headers: await getFunctionAuthHeaders(),
-        body: {
-          full_name: data.full_name,
-          email: data.email,
-          role: data.role,
-          department: data.department || null,
-          position: data.position || null,
-          phone: data.phone || null,
-          passwordMode,
-          password: passwordMode === "password" ? data.password : undefined,
-          redirectTo: `${window.location.origin}/reset-password`,
-        },
+      // SQL-RPC path (no edge function). passwordMode "email" is not supported here,
+      // we always require a temporary password.
+      const tempPassword = passwordMode === "password" && data.password
+        ? data.password
+        : Math.random().toString(36).slice(2, 10) + "A1!";
+      const { error } = await supabase.rpc("add_app_user", {
+        p_email: data.email,
+        p_password: tempPassword,
+        p_full_name: data.full_name,
+        p_role: data.role,
+        p_department: data.department || null,
+        p_position: data.position || null,
+        p_phone: data.phone || null,
       });
-
       if (error) throw error;
-      if (response?.error) throw new Error(response.error);
+      if (passwordMode === "email") {
+        toast.info(`Temporary password: ${tempPassword} — share with the user.`);
+      }
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["users-profiles"] });
@@ -462,20 +458,15 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
 
   const updateUser = useMutation({
     mutationFn: async (data: any) => {
-      const { data: response, error } = await supabase.functions.invoke("admin-update-user", {
-        headers: await getFunctionAuthHeaders(),
-        body: {
-          userId: editingUser.id,
-          full_name: data.full_name,
-          role: data.role,
-          department: data.department || null,
-          position: data.position || null,
-          phone: data.phone || null,
-        },
+      const { error } = await supabase.rpc("update_app_user", {
+        p_user_id: editingUser.id,
+        p_full_name: data.full_name,
+        p_role: data.role,
+        p_department: data.department || null,
+        p_position: data.position || null,
+        p_phone: data.phone || null,
       });
-
       if (error) throw error;
-      if (response?.error) throw new Error(typeof response.error === "string" ? response.error : "Failed to update user");
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["users-profiles"] });
