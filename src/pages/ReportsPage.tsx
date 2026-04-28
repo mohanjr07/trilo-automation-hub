@@ -127,7 +127,7 @@ export default function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `taskflow-${filename}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.download = `magic-aisles-${filename}-${format(new Date(), "yyyy-MM-dd")}.csv`;
     a.click();
   };
 

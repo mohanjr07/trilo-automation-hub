@@ -81,7 +81,7 @@ export default function AdminDashboard() {
         <h1 className="font-heading text-[28px] font-bold text-ink-primary mb-6">Dashboard</h1>
         <EmptyState
           icon={CheckSquare}
-          title="Welcome to TaskFlow!"
+          title="Welcome to Magic Aisles!"
           description="Get started by creating your first task or adding team members."
           actionLabel="Create your first task"
           onAction={() => navigate("/tasks")}
