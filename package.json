@@ -1,6 +1,6 @@
 {
-  "name": "taskflow",
-  "productName": "TaskFlow",
+  "name": "magic-aisles",
+  "productName": "Magic Aisles",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -101,8 +101,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.trilo.taskflow",
-    "productName": "TaskFlow",
+    "appId": "com.magicaisles.app",
+    "productName": "Magic Aisles",
     "directories": {
       "output": "release"
     },
@@ -130,7 +130,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TaskFlow"
+      "shortcutName": "Magic Aisles"
     }
   }
 }
