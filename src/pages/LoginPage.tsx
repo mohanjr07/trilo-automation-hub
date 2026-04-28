@@ -26,7 +26,6 @@ export default function LoginPage() {
     resolver: zodResolver(schema),
   });
 
-  // Once profile is loaded after sign-in, redirect based on role
   useEffect(() => {
     if (session && profile) {
       if (profile.role === "employee") navigate("/my-dashboard", { replace: true });
@@ -41,10 +40,7 @@ export default function LoginPage() {
     if (error) {
       setLoading(false);
       toast.error("Invalid email or password");
-      return;
     }
-    // Do NOT navigate here — the useEffect above will fire once
-    // AuthContext finishes fetching the profile after SIGNED_IN
   };
 
   return (
@@ -56,7 +52,13 @@ export default function LoginPage() {
         className="w-full max-w-[420px] rounded-modal bg-card p-8 shadow-modal"
       >
         <div className="mb-8 text-center">
-          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Magic Aisles" className="mx-auto mb-4 h-14 object-contain" />
+          {/* Emblem only — larger size */}
+          <img
+            src={`${import.meta.env.BASE_URL}favicon.png`}
+            alt="Magic Aisles"
+            className="mx-auto mb-5 object-contain"
+            style={{ width: "80px", height: "80px" }}
+          />
           <h1 className="font-heading text-2xl font-bold text-ink-primary">Task Flow</h1>
           <p className="mt-1 text-sm text-ink-muted">Organize work. Track everything.</p>
         </div>
