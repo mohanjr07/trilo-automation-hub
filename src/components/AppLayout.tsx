@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, CheckSquare, Users, Calendar, BarChart3,
-  Settings, User, Bell, LogOut, Menu, X, Video, StickyNote, ClipboardList, FolderKanban, Network,
+  Settings, User, Bell, LogOut, Menu, X, Video, StickyNote, ClipboardList, FolderKanban, Network, Boxes,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import UserAvatar from "@/components/UserAvatar";
@@ -24,10 +24,9 @@ const adminNav: NavItem[] = [
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Notes", path: "/notes", icon: StickyNote },
+  { label: "Assets", path: "/assets", icon: Boxes },
   { label: "Settings", path: "/settings", icon: Settings },
-];
-
-const managerNav: NavItem[] = [
+];: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
@@ -39,6 +38,7 @@ const managerNav: NavItem[] = [
   { label: "My Leave", path: "/my-leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Notes", path: "/notes", icon: StickyNote },
+  { label: "Assets", path: "/assets", icon: Boxes },
   { label: "Settings", path: "/settings", icon: Settings },
 ];
 
