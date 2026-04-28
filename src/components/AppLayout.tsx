@@ -26,7 +26,9 @@ const adminNav: NavItem[] = [
   { label: "Notes", path: "/notes", icon: StickyNote },
   { label: "Assets", path: "/assets", icon: Boxes },
   { label: "Settings", path: "/settings", icon: Settings },
-];: NavItem[] = [
+];
+
+const managerNav: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
