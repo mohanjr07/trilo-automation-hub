@@ -12,7 +12,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Monitor, Search, Plus, X, Pencil, Trash2,
   Laptop, Smartphone, Printer, Server, Headphones,
-  Package, CheckCircle2, AlertCircle, Clock,
+  Package, CheckCircle2, AlertCircle, Clock, Eye,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -64,13 +65,24 @@ const emptyForm = {
 export default function AssetsPage() {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
+
+  // Role-based access control
   const isAdmin = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
+  const isEmployee = profile?.role === "employee";
+  const isIntern = profile?.role === "intern";
+
+  // Only admin can add/edit/delete
+  const canEdit = isAdmin;
+  // All roles can view
+  const canView = isAdmin || isManager || isEmployee || isIntern;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
+  const [viewAsset, setViewAsset] = useState<Asset | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -85,6 +97,7 @@ export default function AssetsPage() {
       if (error) throw error;
       return data as Asset[];
     },
+    enabled: canView,
   });
 
   const { data: profiles = [] } = useQuery({
@@ -93,6 +106,7 @@ export default function AssetsPage() {
       const { data } = await supabase.from("profiles").select("id, full_name").order("full_name");
       return data ?? [];
     },
+    enabled: canEdit,
   });
 
   // ---------- mutations ----------
@@ -114,7 +128,7 @@ export default function AssetsPage() {
       toast.success("Asset added successfully");
       closeModal();
     },
-    onError: () => toast.error("Failed to add asset"),
+    onError: () => toast.error("Failed to add asset. Check your permissions."),
   });
 
   const updateMutation = useMutation({
@@ -135,7 +149,7 @@ export default function AssetsPage() {
       toast.success("Asset updated");
       closeModal();
     },
-    onError: () => toast.error("Failed to update asset"),
+    onError: () => toast.error("Failed to update asset. Check your permissions."),
   });
 
   const deleteMutation = useMutation({
@@ -148,7 +162,7 @@ export default function AssetsPage() {
       toast.success("Asset deleted");
       setDeleteId(null);
     },
-    onError: () => toast.error("Failed to delete asset"),
+    onError: () => toast.error("Failed to delete asset. Check your permissions."),
   });
 
   // ---------- helpers ----------
@@ -165,6 +179,7 @@ export default function AssetsPage() {
     });
     setModalOpen(true);
   };
+  const openView = (a: Asset) => setViewAsset(a);
   const closeModal = () => { setModalOpen(false); setEditAsset(null); setForm(emptyForm); };
 
   const handleSubmit = () => {
@@ -186,6 +201,14 @@ export default function AssetsPage() {
   const assigned = assets.filter((a) => a.status === "assigned").length;
   const maintenance = assets.filter((a) => a.status === "maintenance").length;
 
+  // Role badge display
+  const roleBadge = () => {
+    if (isAdmin) return { label: "Admin — Full Access", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" };
+    if (isManager) return { label: "Manager — View Only", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" };
+    return { label: "View Only", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" };
+  };
+  const badge = roleBadge();
+
   return (
     <AnimatedPage>
       <motion.div variants={staggerContainer} initial="hidden" animate="show" className="space-y-6">
@@ -195,11 +218,18 @@ export default function AssetsPage() {
             <h2 className="text-2xl font-bold text-ink-primary">Assets</h2>
             <p className="text-sm text-ink-muted mt-0.5">Track company assets and their holders</p>
           </div>
-          {isAdmin && (
-            <Button onClick={openAdd} className="gap-2">
-              <Plus className="h-4 w-4" /> Add Asset
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            {/* Access level badge */}
+            <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium", badge.color)}>
+              <ShieldAlert className="h-3 w-3" />
+              {badge.label}
+            </span>
+            {canEdit && (
+              <Button onClick={openAdd} className="gap-2">
+                <Plus className="h-4 w-4" /> Add Asset
+              </Button>
+            )}
+          </div>
         </motion.div>
 
         {/* Stat cards */}
@@ -245,8 +275,14 @@ export default function AssetsPage() {
             <EmptyState
               icon={Package}
               title="No assets found"
-              description={search || statusFilter !== "all" || typeFilter !== "all" ? "Try adjusting your filters" : "Add your first asset to get started"}
-              action={isAdmin ? { label: "Add Asset", onClick: openAdd } : undefined}
+              description={
+                search || statusFilter !== "all" || typeFilter !== "all"
+                  ? "Try adjusting your filters"
+                  : canEdit
+                  ? "Add your first asset to get started"
+                  : "No assets have been added yet"
+              }
+              action={canEdit ? { label: "Add Asset", onClick: openAdd } : undefined}
             />
           ) : (
             <div className="overflow-x-auto">
@@ -259,7 +295,8 @@ export default function AssetsPage() {
                     <th className="text-left px-5 py-3 font-medium">Holder</th>
                     <th className="text-left px-5 py-3 font-medium">Status</th>
                     <th className="text-left px-5 py-3 font-medium">Notes</th>
-                    {isAdmin && <th className="px-5 py-3" />}
+                    {/* Actions column — always shown, content varies by role */}
+                    <th className="px-5 py-3" />
                   </tr>
                 </thead>
                 <tbody>
@@ -304,18 +341,37 @@ export default function AssetsPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3.5 text-ink-muted max-w-[180px] truncate">{asset.notes || "—"}</td>
-                        {isAdmin && (
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2 justify-end">
-                              <button onClick={() => openEdit(asset)} className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors">
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button onClick={() => setDeleteId(asset.id)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-ink-muted hover:text-destructive transition-colors">
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        )}
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2 justify-end">
+                            {/* View button — always available */}
+                            <button
+                              onClick={() => openView(asset)}
+                              className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
+                              title="View details"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                            {/* Edit & Delete — admin only */}
+                            {canEdit && (
+                              <>
+                                <button
+                                  onClick={() => openEdit(asset)}
+                                  className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
+                                  title="Edit asset"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteId(asset.id)}
+                                  className="p-1.5 rounded-lg hover:bg-destructive/10 text-ink-muted hover:text-destructive transition-colors"
+                                  title="Delete asset"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </motion.tr>
                     );
                   })}
@@ -326,9 +382,9 @@ export default function AssetsPage() {
         </motion.div>
       </motion.div>
 
-      {/* Add / Edit Modal */}
+      {/* Add / Edit Modal — admin only */}
       <AnimatePresence>
-        {modalOpen && (
+        {modalOpen && canEdit && (
           <>
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -351,7 +407,11 @@ export default function AssetsPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Asset Name *</label>
-                    <Input placeholder="e.g. MacBook Pro 14" value={form.asset_name} onChange={(e) => setForm((f) => ({ ...f, asset_name: e.target.value }))} />
+                    <Input
+                      placeholder="e.g. MacBook Pro 14"
+                      value={form.asset_name}
+                      onChange={(e) => setForm((f) => ({ ...f, asset_name: e.target.value }))}
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -373,26 +433,42 @@ export default function AssetsPage() {
 
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Serial Number</label>
-                    <Input placeholder="e.g. SN-2024-00123" value={form.serial_number} onChange={(e) => setForm((f) => ({ ...f, serial_number: e.target.value }))} />
+                    <Input
+                      placeholder="e.g. SN-2024-00123"
+                      value={form.serial_number}
+                      onChange={(e) => setForm((f) => ({ ...f, serial_number: e.target.value }))}
+                    />
                   </div>
 
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Holder Name</label>
                     <Select
                       value={form.holder_name || "__none__"}
-                      onValueChange={(v) => setForm((f) => ({ ...f, holder_name: v === "__none__" ? "" : v, status: v === "__none__" ? "available" : "assigned" }))}
+                      onValueChange={(v) =>
+                        setForm((f) => ({
+                          ...f,
+                          holder_name: v === "__none__" ? "" : v,
+                          status: v === "__none__" ? "available" : "assigned",
+                        }))
+                      }
                     >
                       <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Unassigned</SelectItem>
-                        {(profiles as any[]).map((p) => <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>)}
+                        {(profiles as any[]).map((p) => (
+                          <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Notes</label>
-                    <Input placeholder="Any additional notes…" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+                    <Input
+                      placeholder="Any additional notes…"
+                      value={form.notes}
+                      onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                    />
                   </div>
                 </div>
 
@@ -412,9 +488,110 @@ export default function AssetsPage() {
         )}
       </AnimatePresence>
 
-      {/* Delete confirm */}
+      {/* View Details Modal — all roles */}
       <AnimatePresence>
-        {deleteId && (
+        {viewAsset && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={() => setViewAsset(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {(() => {
+                      const Icon = assetTypeIcon(viewAsset.asset_type);
+                      return (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                      );
+                    })()}
+                    <div>
+                      <h3 className="text-lg font-semibold text-ink-primary">{viewAsset.asset_name}</h3>
+                      <p className="text-xs text-ink-muted">{viewAsset.asset_type}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setViewAsset(null)} className="text-ink-muted hover:text-ink-primary">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between py-2.5 border-b border-border">
+                    <span className="text-ink-muted font-medium">Status</span>
+                    {(() => {
+                      const sc = statusConfig[viewAsset.status];
+                      const StatusIcon = sc.icon;
+                      return (
+                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", sc.color)}>
+                          <StatusIcon className="h-3 w-3" />
+                          {sc.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex items-center justify-between py-2.5 border-b border-border">
+                    <span className="text-ink-muted font-medium">Holder</span>
+                    {viewAsset.holder_name ? (
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
+                          {viewAsset.holder_name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-ink-primary font-medium">{viewAsset.holder_name}</span>
+                      </div>
+                    ) : (
+                      <span className="text-ink-muted">Unassigned</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between py-2.5 border-b border-border">
+                    <span className="text-ink-muted font-medium">Serial No.</span>
+                    <span className="font-mono text-xs text-ink-secondary">{viewAsset.serial_number || "—"}</span>
+                  </div>
+                  {viewAsset.assigned_at && (
+                    <div className="flex items-center justify-between py-2.5 border-b border-border">
+                      <span className="text-ink-muted font-medium">Assigned On</span>
+                      <span className="text-ink-secondary text-xs">
+                        {new Date(viewAsset.assigned_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    </div>
+                  )}
+                  {viewAsset.notes && (
+                    <div className="py-2.5">
+                      <span className="text-ink-muted font-medium block mb-1">Notes</span>
+                      <p className="text-ink-secondary text-xs leading-relaxed">{viewAsset.notes}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={() => setViewAsset(null)}>Close</Button>
+                  {canEdit && (
+                    <Button
+                      className="flex-1"
+                      onClick={() => { setViewAsset(null); openEdit(viewAsset); }}
+                    >
+                      <Pencil className="h-4 w-4 mr-1.5" /> Edit Asset
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirm — admin only */}
+      <AnimatePresence>
+        {deleteId && canEdit && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/40 z-40" onClick={() => setDeleteId(null)} />
             <motion.div
@@ -426,7 +603,14 @@ export default function AssetsPage() {
                 <p className="text-sm text-ink-muted">This action cannot be undone.</p>
                 <div className="flex gap-3">
                   <Button variant="outline" className="flex-1" onClick={() => setDeleteId(null)}>Cancel</Button>
-                  <Button variant="destructive" className="flex-1" onClick={() => deleteMutation.mutate(deleteId!)} disabled={deleteMutation.isPending}>Delete</Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={() => deleteMutation.mutate(deleteId!)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </div>
             </motion.div>
