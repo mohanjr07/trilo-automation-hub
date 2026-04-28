@@ -2,18 +2,20 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
-import StatCard from "@/components/StatCard";
-import EmptyState from "@/components/EmptyState";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Monitor, Search, Plus, X, Pencil, Trash2,
   Laptop, Smartphone, Printer, Server, Headphones,
   Package, CheckCircle2, AlertCircle, Clock, Eye,
-  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -31,8 +33,13 @@ type Asset = {
   created_at: string;
 };
 
+type Profile = {
+  id: string;
+  full_name: string;
+};
+
 const ASSET_TYPES = ["Laptop", "Desktop", "Monitor", "Phone", "Tablet", "Printer", "Server", "Headset", "Other"];
-const STATUS_OPTIONS = ["available", "assigned", "maintenance", "retired"];
+const STATUS_OPTIONS = ["available", "assigned", "maintenance", "retired"] as const;
 
 const assetTypeIcon = (type: string) => {
   switch (type.toLowerCase()) {
@@ -46,11 +53,11 @@ const assetTypeIcon = (type: string) => {
   }
 };
 
-const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
-  available:   { label: "Available",   color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",   icon: CheckCircle2 },
-  assigned:    { label: "Assigned",    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",       icon: Clock },
+const statusConfig = {
+  available:   { label: "Available",   color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",     icon: CheckCircle2 },
+  assigned:    { label: "Assigned",    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",         icon: Clock },
   maintenance: { label: "Maintenance", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", icon: AlertCircle },
-  retired:     { label: "Retired",     color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",          icon: X },
+  retired:     { label: "Retired",     color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400",            icon: X },
 };
 
 const emptyForm = {
@@ -66,16 +73,7 @@ export default function AssetsPage() {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
 
-  // Role-based access control
   const isAdmin = profile?.role === "admin";
-  const isManager = profile?.role === "manager";
-  const isEmployee = profile?.role === "employee";
-  const isIntern = profile?.role === "intern";
-
-  // Only admin can add/edit/delete
-  const canEdit = isAdmin;
-  // All roles can view
-  const canView = isAdmin || isManager || isEmployee || isIntern;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -86,7 +84,6 @@ export default function AssetsPage() {
   const [form, setForm] = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // ---------- data ----------
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ["assets"],
     queryFn: async () => {
@@ -95,21 +92,22 @@ export default function AssetsPage() {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as Asset[];
+      return (data ?? []) as Asset[];
     },
-    enabled: canView,
   });
 
   const { data: profiles = [] } = useQuery({
     queryKey: ["profiles-simple"],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("id, full_name").order("full_name");
-      return data ?? [];
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .order("full_name");
+      return (data ?? []) as Profile[];
     },
-    enabled: canEdit,
+    enabled: isAdmin,
   });
 
-  // ---------- mutations ----------
   const createMutation = useMutation({
     mutationFn: async (values: typeof emptyForm) => {
       const { error } = await supabase.from("assets").insert({
@@ -128,7 +126,7 @@ export default function AssetsPage() {
       toast.success("Asset added successfully");
       closeModal();
     },
-    onError: () => toast.error("Failed to add asset. Check your permissions."),
+    onError: (e: any) => toast.error("Failed to add asset: " + (e?.message ?? "Unknown error")),
   });
 
   const updateMutation = useMutation({
@@ -149,7 +147,7 @@ export default function AssetsPage() {
       toast.success("Asset updated");
       closeModal();
     },
-    onError: () => toast.error("Failed to update asset. Check your permissions."),
+    onError: (e: any) => toast.error("Failed to update: " + (e?.message ?? "Unknown error")),
   });
 
   const deleteMutation = useMutation({
@@ -162,10 +160,9 @@ export default function AssetsPage() {
       toast.success("Asset deleted");
       setDeleteId(null);
     },
-    onError: () => toast.error("Failed to delete asset. Check your permissions."),
+    onError: (e: any) => toast.error("Failed to delete: " + (e?.message ?? "Unknown error")),
   });
 
-  // ---------- helpers ----------
   const openAdd = () => { setEditAsset(null); setForm(emptyForm); setModalOpen(true); };
   const openEdit = (a: Asset) => {
     setEditAsset(a);
@@ -179,7 +176,6 @@ export default function AssetsPage() {
     });
     setModalOpen(true);
   };
-  const openView = (a: Asset) => setViewAsset(a);
   const closeModal = () => { setModalOpen(false); setEditAsset(null); setForm(emptyForm); };
 
   const handleSubmit = () => {
@@ -190,201 +186,206 @@ export default function AssetsPage() {
 
   const filtered = assets.filter((a) => {
     const q = search.toLowerCase();
-    if (q && !a.asset_name.toLowerCase().includes(q) && !(a.holder_name ?? "").toLowerCase().includes(q) && !(a.serial_number ?? "").toLowerCase().includes(q)) return false;
+    if (q && !a.asset_name.toLowerCase().includes(q) &&
+        !(a.holder_name ?? "").toLowerCase().includes(q) &&
+        !(a.serial_number ?? "").toLowerCase().includes(q)) return false;
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
     if (typeFilter !== "all" && a.asset_type !== typeFilter) return false;
     return true;
   });
 
-  const total = assets.length;
-  const available = assets.filter((a) => a.status === "available").length;
-  const assigned = assets.filter((a) => a.status === "assigned").length;
-  const maintenance = assets.filter((a) => a.status === "maintenance").length;
-
-  // Role badge display
-  const roleBadge = () => {
-    if (isAdmin) return { label: "Admin — Full Access", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" };
-    if (isManager) return { label: "Manager — View Only", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" };
-    return { label: "View Only", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" };
+  const stats = {
+    total: assets.length,
+    available: assets.filter(a => a.status === "available").length,
+    assigned: assets.filter(a => a.status === "assigned").length,
+    maintenance: assets.filter(a => a.status === "maintenance").length,
   };
-  const badge = roleBadge();
 
   return (
-    <AnimatedPage>
-      <motion.div variants={staggerContainer} initial="hidden" animate="show" className="space-y-6">
-        {/* Header */}
-        <motion.div variants={staggerItem} className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-ink-primary">Assets</h2>
-            <p className="text-sm text-ink-muted mt-0.5">Track company assets and their holders</p>
+    <div className="p-6 space-y-6">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-ink-primary">Assets</h2>
+          <p className="text-sm text-ink-muted mt-0.5">Track company assets and their holders</p>
+        </div>
+        {isAdmin && (
+          <Button onClick={openAdd} className="gap-2">
+            <Plus className="h-4 w-4" /> Add Asset
+          </Button>
+        )}
+      </div>
+
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Total Assets",  value: stats.total,       icon: Package,      color: "text-primary",    bg: "bg-primary/10" },
+          { label: "Available",     value: stats.available,   icon: CheckCircle2, color: "text-green-600",  bg: "bg-green-100 dark:bg-green-900/30" },
+          { label: "Assigned",      value: stats.assigned,    icon: Clock,        color: "text-blue-600",   bg: "bg-blue-100 dark:bg-blue-900/30" },
+          { label: "Maintenance",   value: stats.maintenance, icon: AlertCircle,  color: "text-yellow-600", bg: "bg-yellow-100 dark:bg-yellow-900/30" },
+        ].map(({ label, value, icon: Icon, color, bg }) => (
+          <div key={label} className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-ink-secondary">{label}</p>
+                <p className="mt-1 text-3xl font-bold text-ink-primary">{value}</p>
+              </div>
+              <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", bg)}>
+                <Icon className={cn("h-5 w-5", color)} />
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Access level badge */}
-            <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium", badge.color)}>
-              <ShieldAlert className="h-3 w-3" />
-              {badge.label}
-            </span>
-            {canEdit && (
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
+          <Input
+            placeholder="Search assets or holders…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {STATUS_OPTIONS.map((s) => (
+              <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            {ASSET_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20 text-ink-muted text-sm">
+            Loading assets…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted mb-4">
+              <Package className="h-8 w-8 text-ink-muted" />
+            </div>
+            <h3 className="text-lg font-semibold text-ink-primary mb-1">No assets found</h3>
+            <p className="text-sm text-ink-muted mb-4">
+              {search || statusFilter !== "all" || typeFilter !== "all"
+                ? "Try adjusting your filters"
+                : isAdmin ? "Add your first asset to get started" : "No assets have been added yet"}
+            </p>
+            {isAdmin && assets.length === 0 && (
               <Button onClick={openAdd} className="gap-2">
                 <Plus className="h-4 w-4" /> Add Asset
               </Button>
             )}
           </div>
-        </motion.div>
-
-        {/* Stat cards */}
-        <motion.div variants={staggerItem} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard title="Total Assets" value={total} icon={Package} />
-          <StatCard title="Available" value={available} icon={CheckCircle2} />
-          <StatCard title="Assigned" value={assigned} icon={Clock} />
-          <StatCard title="Maintenance" value={maintenance} icon={AlertCircle} />
-        </motion.div>
-
-        {/* Filters */}
-        <motion.div variants={staggerItem} className="flex flex-wrap gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
-            <Input
-              placeholder="Search assets or holders…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              {ASSET_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </motion.div>
-
-        {/* Assets table */}
-        <motion.div variants={staggerItem} className="rounded-xl border border-border bg-card overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-20 text-ink-muted text-sm">Loading assets…</div>
-          ) : filtered.length === 0 ? (
-            <EmptyState
-              icon={Package}
-              title="No assets found"
-              description={
-                search || statusFilter !== "all" || typeFilter !== "all"
-                  ? "Try adjusting your filters"
-                  : canEdit
-                  ? "Add your first asset to get started"
-                  : "No assets have been added yet"
-              }
-              action={canEdit ? { label: "Add Asset", onClick: openAdd } : undefined}
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 text-ink-muted text-xs uppercase tracking-wide">
-                    <th className="text-left px-5 py-3 font-medium">Asset</th>
-                    <th className="text-left px-5 py-3 font-medium">Type</th>
-                    <th className="text-left px-5 py-3 font-medium">Serial No.</th>
-                    <th className="text-left px-5 py-3 font-medium">Holder</th>
-                    <th className="text-left px-5 py-3 font-medium">Status</th>
-                    <th className="text-left px-5 py-3 font-medium">Notes</th>
-                    {/* Actions column — always shown, content varies by role */}
-                    <th className="px-5 py-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((asset, i) => {
-                    const Icon = assetTypeIcon(asset.asset_type);
-                    const sc = statusConfig[asset.status];
-                    const StatusIcon = sc.icon;
-                    return (
-                      <motion.tr
-                        key={asset.id}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.03 }}
-                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
-                              <Icon className="h-4 w-4" />
-                            </div>
-                            <span className="font-medium text-ink-primary">{asset.asset_name}</span>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-ink-muted text-xs uppercase tracking-wide">
+                  <th className="text-left px-5 py-3 font-medium">Asset</th>
+                  <th className="text-left px-5 py-3 font-medium">Type</th>
+                  <th className="text-left px-5 py-3 font-medium">Serial No.</th>
+                  <th className="text-left px-5 py-3 font-medium">Holder</th>
+                  <th className="text-left px-5 py-3 font-medium">Status</th>
+                  <th className="text-left px-5 py-3 font-medium">Notes</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((asset) => {
+                  const Icon = assetTypeIcon(asset.asset_type);
+                  const sc = statusConfig[asset.status] ?? statusConfig.available;
+                  const StatusIcon = sc.icon;
+                  return (
+                    <tr
+                      key={asset.id}
+                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                    >
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                            <Icon className="h-4 w-4" />
                           </div>
-                        </td>
-                        <td className="px-5 py-3.5 text-ink-secondary">{asset.asset_type}</td>
-                        <td className="px-5 py-3.5 text-ink-muted font-mono text-xs">{asset.serial_number || "—"}</td>
-                        <td className="px-5 py-3.5">
-                          {asset.holder_name ? (
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                                {asset.holder_name.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="text-ink-primary">{asset.holder_name}</span>
+                          <span className="font-medium text-ink-primary">{asset.asset_name}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-ink-secondary">{asset.asset_type}</td>
+                      <td className="px-5 py-3.5 text-ink-muted font-mono text-xs">
+                        {asset.serial_number || "—"}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {asset.holder_name ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                              {asset.holder_name.charAt(0).toUpperCase()}
                             </div>
-                          ) : (
-                            <span className="text-ink-muted">—</span>
+                            <span className="text-ink-primary">{asset.holder_name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-ink-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", sc.color)}>
+                          <StatusIcon className="h-3 w-3" />
+                          {sc.label}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-ink-muted max-w-[180px] truncate">
+                        {asset.notes || "—"}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-1 justify-end">
+                          <button
+                            onClick={() => setViewAsset(asset)}
+                            className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          {isAdmin && (
+                            <>
+                              <button
+                                onClick={() => openEdit(asset)}
+                                className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteId(asset.id)}
+                                className="p-1.5 rounded-lg hover:bg-destructive/10 text-ink-muted hover:text-destructive transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
                           )}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", sc.color)}>
-                            <StatusIcon className="h-3 w-3" />
-                            {sc.label}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-ink-muted max-w-[180px] truncate">{asset.notes || "—"}</td>
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-2 justify-end">
-                            {/* View button — always available */}
-                            <button
-                              onClick={() => openView(asset)}
-                              className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
-                              title="View details"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </button>
-                            {/* Edit & Delete — admin only */}
-                            {canEdit && (
-                              <>
-                                <button
-                                  onClick={() => openEdit(asset)}
-                                  className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
-                                  title="Edit asset"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => setDeleteId(asset.id)}
-                                  className="p-1.5 rounded-lg hover:bg-destructive/10 text-ink-muted hover:text-destructive transition-colors"
-                                  title="Delete asset"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </motion.div>
-      </motion.div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-      {/* Add / Edit Modal — admin only */}
+      {/* Add / Edit Modal */}
       <AnimatePresence>
-        {modalOpen && canEdit && (
+        {modalOpen && isAdmin && (
           <>
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -395,83 +396,84 @@ export default function AssetsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: "spring", stiffness: 300, damping: 28 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
               <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-ink-primary">{editAsset ? "Edit Asset" : "Add Asset"}</h3>
-                  <button onClick={closeModal} className="text-ink-muted hover:text-ink-primary"><X className="h-5 w-5" /></button>
+                  <h3 className="text-lg font-semibold text-ink-primary">
+                    {editAsset ? "Edit Asset" : "Add Asset"}
+                  </h3>
+                  <button onClick={closeModal} className="text-ink-muted hover:text-ink-primary">
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
-
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Asset Name *</label>
                     <Input
                       placeholder="e.g. MacBook Pro 14"
                       value={form.asset_name}
-                      onChange={(e) => setForm((f) => ({ ...f, asset_name: e.target.value }))}
+                      onChange={(e) => setForm(f => ({ ...f, asset_name: e.target.value }))}
                     />
                   </div>
-
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-medium text-ink-muted mb-1.5 block">Type</label>
-                      <Select value={form.asset_type} onValueChange={(v) => setForm((f) => ({ ...f, asset_type: v }))}>
+                      <Select value={form.asset_type} onValueChange={(v) => setForm(f => ({ ...f, asset_type: v }))}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{ASSET_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                        <SelectContent>
+                          {ASSET_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                        </SelectContent>
                       </Select>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-ink-muted mb-1.5 block">Status</label>
-                      <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as Asset["status"] }))}>
+                      <Select value={form.status} onValueChange={(v) => setForm(f => ({ ...f, status: v as Asset["status"] }))}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}</SelectContent>
+                        <SelectContent>
+                          {STATUS_OPTIONS.map(s => (
+                            <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>
+                          ))}
+                        </SelectContent>
                       </Select>
                     </div>
                   </div>
-
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Serial Number</label>
                     <Input
                       placeholder="e.g. SN-2024-00123"
                       value={form.serial_number}
-                      onChange={(e) => setForm((f) => ({ ...f, serial_number: e.target.value }))}
+                      onChange={(e) => setForm(f => ({ ...f, serial_number: e.target.value }))}
                     />
                   </div>
-
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Holder Name</label>
                     <Select
                       value={form.holder_name || "__none__"}
-                      onValueChange={(v) =>
-                        setForm((f) => ({
-                          ...f,
-                          holder_name: v === "__none__" ? "" : v,
-                          status: v === "__none__" ? "available" : "assigned",
-                        }))
-                      }
+                      onValueChange={(v) => setForm(f => ({
+                        ...f,
+                        holder_name: v === "__none__" ? "" : v,
+                        status: v === "__none__" ? "available" : "assigned",
+                      }))}
                     >
                       <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Unassigned</SelectItem>
-                        {(profiles as any[]).map((p) => (
+                        {profiles.map(p => (
                           <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Notes</label>
                     <Input
                       placeholder="Any additional notes…"
                       value={form.notes}
-                      onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                      onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
                     />
                   </div>
                 </div>
-
                 <div className="flex gap-3 pt-1">
                   <Button variant="outline" className="flex-1" onClick={closeModal}>Cancel</Button>
                   <Button
@@ -488,7 +490,7 @@ export default function AssetsPage() {
         )}
       </AnimatePresence>
 
-      {/* View Details Modal — all roles */}
+      {/* View Modal */}
       <AnimatePresence>
         {viewAsset && (
           <>
@@ -501,7 +503,6 @@ export default function AssetsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: "spring", stiffness: 300, damping: 28 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
               <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
@@ -524,62 +525,44 @@ export default function AssetsPage() {
                     <X className="h-5 w-5" />
                   </button>
                 </div>
-
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between py-2.5 border-b border-border">
+                <div className="divide-y divide-border text-sm">
+                  <div className="flex items-center justify-between py-3">
                     <span className="text-ink-muted font-medium">Status</span>
                     {(() => {
                       const sc = statusConfig[viewAsset.status];
-                      const StatusIcon = sc.icon;
+                      const SI = sc.icon;
                       return (
                         <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", sc.color)}>
-                          <StatusIcon className="h-3 w-3" />
-                          {sc.label}
+                          <SI className="h-3 w-3" />{sc.label}
                         </span>
                       );
                     })()}
                   </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border">
+                  <div className="flex items-center justify-between py-3">
                     <span className="text-ink-muted font-medium">Holder</span>
                     {viewAsset.holder_name ? (
                       <div className="flex items-center gap-2">
                         <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
                           {viewAsset.holder_name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-ink-primary font-medium">{viewAsset.holder_name}</span>
+                        <span className="font-medium text-ink-primary">{viewAsset.holder_name}</span>
                       </div>
-                    ) : (
-                      <span className="text-ink-muted">Unassigned</span>
-                    )}
+                    ) : <span className="text-ink-muted">Unassigned</span>}
                   </div>
-                  <div className="flex items-center justify-between py-2.5 border-b border-border">
+                  <div className="flex items-center justify-between py-3">
                     <span className="text-ink-muted font-medium">Serial No.</span>
                     <span className="font-mono text-xs text-ink-secondary">{viewAsset.serial_number || "—"}</span>
                   </div>
-                  {viewAsset.assigned_at && (
-                    <div className="flex items-center justify-between py-2.5 border-b border-border">
-                      <span className="text-ink-muted font-medium">Assigned On</span>
-                      <span className="text-ink-secondary text-xs">
-                        {new Date(viewAsset.assigned_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                      </span>
-                    </div>
-                  )}
-                  {viewAsset.notes && (
-                    <div className="py-2.5">
-                      <span className="text-ink-muted font-medium block mb-1">Notes</span>
-                      <p className="text-ink-secondary text-xs leading-relaxed">{viewAsset.notes}</p>
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between py-3">
+                    <span className="text-ink-muted font-medium">Notes</span>
+                    <span className="text-ink-secondary text-right max-w-[200px]">{viewAsset.notes || "—"}</span>
+                  </div>
                 </div>
-
                 <div className="flex gap-3 pt-1">
                   <Button variant="outline" className="flex-1" onClick={() => setViewAsset(null)}>Close</Button>
-                  {canEdit && (
-                    <Button
-                      className="flex-1"
-                      onClick={() => { setViewAsset(null); openEdit(viewAsset); }}
-                    >
-                      <Pencil className="h-4 w-4 mr-1.5" /> Edit Asset
+                  {isAdmin && (
+                    <Button className="flex-1" onClick={() => { setViewAsset(null); openEdit(viewAsset); }}>
+                      <Pencil className="h-4 w-4 mr-1.5" /> Edit
                     </Button>
                   )}
                 </div>
@@ -589,11 +572,15 @@ export default function AssetsPage() {
         )}
       </AnimatePresence>
 
-      {/* Delete confirm — admin only */}
+      {/* Delete Confirm */}
       <AnimatePresence>
-        {deleteId && canEdit && (
+        {deleteId && isAdmin && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/40 z-40" onClick={() => setDeleteId(null)} />
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={() => setDeleteId(null)}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -617,6 +604,6 @@ export default function AssetsPage() {
           </>
         )}
       </AnimatePresence>
-    </AnimatedPage>
+    </div>
   );
 }
