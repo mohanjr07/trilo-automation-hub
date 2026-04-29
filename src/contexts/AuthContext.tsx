@@ -6,12 +6,13 @@ type Profile = {
   id: string;
   full_name: string;
   email: string;
-  role: "admin" | "manager" | "employee" | "intern";
+  role: "super_admin" | "admin" | "manager" | "employee" | "intern";
   department: string | null;
   position: string | null;
   avatar_url: string | null;
   phone: string | null;
   is_active: boolean;
+  manager_id: string | null;
 };
 
 type AuthContextType = {
