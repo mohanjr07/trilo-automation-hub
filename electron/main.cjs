@@ -166,32 +166,40 @@ ipcMain.on("taskflow:focus-window", () => {
 //    2. Sends "notify:clicked" back to the renderer with { route } so React
 //       can navigate to the right page (e.g. "/notifications").
 //
+//  macOS notes:
+//    • icon is intentionally omitted on macOS — the OS always uses the
+//      .app bundle icon in Notification Center; passing a custom icon
+//      causes the notification to silently fail on unsigned builds.
+//    • The app must be packaged (.dmg / .app) for macOS notifications to
+//      appear — they are blocked by the OS when loaded via file:// in dev.
+//    • electron-builder automatically injects NSUserNotificationAlertStyle
+//      = "alert" via the mac.extendInfo config (see package.json note below).
+//
 ipcMain.on("notify:show", (event, { title, body, route }) => {
   if (!Notification.isSupported()) return;
 
-  // Resolve the app icon for the notification badge.
-  const iconPath = isDev
-    ? path.join(__dirname, "..", "public", "favicon.png")
-    : path.join(__dirname, "..", "dist", "favicon.png");
+  const isMac = process.platform === "darwin";
 
-  const icon = nativeImage.createFromPath(iconPath);
+  // On Windows resolve the app icon; on macOS omit it (see note above).
+  let icon = undefined;
+  if (!isMac) {
+    const iconPath = isDev
+      ? path.join(__dirname, "..", "public", "favicon.png")
+      : path.join(__dirname, "..", "dist", "favicon.png");
+    const img = nativeImage.createFromPath(iconPath);
+    if (!img.isEmpty()) icon = img;
+  }
 
   const notification = new Notification({
     title: title ?? "Magic Aisles",
     body: body ?? "",
-    icon: icon.isEmpty() ? undefined : icon,
-    // urgency only applies on Linux but is harmless on other platforms.
+    ...(icon ? { icon } : {}),
     urgency: "normal",
-    // timeoutType "default" lets the OS decide how long to show the toast
-    // (5 s on Windows, slide-in on macOS). "never" keeps it until dismissed.
     timeoutType: "default",
-    // toastXml is Windows-only — we omit it so the default Teams-style
-    // layout (icon + title + body) is used automatically.
   });
 
   notification.on("click", () => {
     showMainWindow();
-    // Tell the renderer to navigate to the relevant page.
     if (mainWindow) {
       mainWindow.webContents.send("notify:clicked", { route: route ?? "/notifications" });
     }
