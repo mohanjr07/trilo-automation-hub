@@ -137,7 +137,11 @@
       "extendInfo": {
         "NSUserNotificationAlertStyle": "alert",
         "NSUserNotificationsUsageDescription": "Magic Aisles sends you notifications for tasks, leaves and mentions."
-      }
+      },
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "nsis": {
       "oneClick": false,
