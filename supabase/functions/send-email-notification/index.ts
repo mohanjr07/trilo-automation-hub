@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
         "X-Connection-Api-Key": resendApiKey,
       },
       body: JSON.stringify({
-        from: "Magic Aisles <onboarding@resend.dev>",
+        from: "Magic Aisles <notifications@magicaisles.com>",
         to: [profile.email],
         subject: title,
         html,
