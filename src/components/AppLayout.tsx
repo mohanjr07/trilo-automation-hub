@@ -50,7 +50,8 @@ const managerNav: NavItem[] = [
 
 const employeeNav: NavItem[] = [
   { label: "Dashboard", path: "/my-dashboard", icon: LayoutDashboard },
-  { label: "My Tasks", path: "/my-tasks", icon: CheckSquare },
+  { label: "Tasks", path: "/tasks", icon: CheckSquare },
+  { label: "My Tasks", path: "/my-tasks", icon: ClipboardList },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
   { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
