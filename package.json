@@ -135,7 +135,8 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "extendInfo": {
-        "NSUserNotificationAlertStyle": "alert"
+        "NSUserNotificationAlertStyle": "alert",
+        "NSUserNotificationsUsageDescription": "Magic Aisles sends you notifications for tasks, leaves and mentions."
       }
     },
     "nsis": {
