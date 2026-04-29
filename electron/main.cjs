@@ -1,32 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  electron/main.cjs
-//  Magic Aisles desktop entry point.
+//  electron/main.cjs — Magic Aisles desktop entry point.
 //
-//  • In dev mode (npm run electron:dev):
-//      Loads http://localhost:8080 (the Vite dev server) so HMR works.
-//  • In production (the .exe built by electron-builder):
-//      Loads the compiled dist/index.html via file://. Because the React
-//      app uses HashRouter when window.IS_ELECTRON is true, deep links and
-//      reloads work correctly even from a file:// origin.
-//
-//  Background-app behavior (Teams / Discord / WhatsApp style):
-//    • A system-tray icon stays visible after the window is closed.
-//    • Clicking the X on the window hides it instead of quitting.
-//    • Tray icon click  →  show window.
-//    • Tray right-click →  Open / Quit menu.
-//    • App only truly exits via the tray "Quit" menu OR system shutdown.
-//    • This keeps the renderer alive so Supabase realtime keeps firing
-//      desktop notifications even when the window is closed.
-//
-//  Desktop notifications (Teams-style):
-//    • Uses Electron's native Notification module (not the Web API) so the
-//      app icon appears in the toast, sound plays, and it groups correctly
-//      in Windows Action Center / macOS Notification Center.
-//    • Renderer sends "notify:show" IPC → main fires the native toast.
-//    • Clicking the toast sends "notify:clicked" back → renderer navigates.
-//
-//  Single-instance lock: launching Magic Aisles a second time just brings
-//  the existing window to the front instead of starting a duplicate.
+//  Desktop notifications — Mac + Windows:
+//    • Windows: native toast, groups in Action Center under "Magic Aisles".
+//    • macOS:   Notification Center alert. App must be installed from .dmg.
+//               NSUserNotificationAlertStyle = "alert" in package.json keeps
+//               alerts visible until dismissed, like Teams.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const {
@@ -42,20 +21,19 @@ const {
 const path = require("path");
 
 const isDev = !app.isPackaged;
+const isMac = process.platform === "darwin";
 
-// Set the Application User Model ID. Required on Windows 10/11 so that
-// native toast notifications show "Magic Aisles" as the source (not "Electron")
-// and group correctly in the Action Center. Must match `build.appId`.
-app.setAppUserModelId("com.magicaisles.app");
+// Windows only — makes toasts show "Magic Aisles" not "Electron".
+if (!isMac) {
+  app.setAppUserModelId("com.magicaisles.app");
+}
 
 // ─── Single-instance lock ─────────────────────────────────────────────────
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    showMainWindow();
-  });
+  app.on("second-instance", () => { showMainWindow(); });
 }
 
 let mainWindow = null;
@@ -63,10 +41,7 @@ let tray = null;
 let isQuittingForReal = false;
 
 function showMainWindow() {
-  if (!mainWindow) {
-    createWindow();
-    return;
-  }
+  if (!mainWindow) { createWindow(); return; }
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
@@ -85,11 +60,11 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      // sandbox: true blocks Notification API on macOS — must be false.
+      sandbox: false,
     },
   });
 
-  // Hide the default File/Edit/View menu bar — Magic Aisles has its own UI.
   Menu.setApplicationMenu(null);
 
   if (isDev) {
@@ -101,7 +76,6 @@ function createWindow() {
     });
   }
 
-  // Any link with target="_blank" or window.open(...) opens in the OS browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("http://") || url.startsWith("https://")) {
       shell.openExternal(url);
@@ -109,7 +83,7 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  // Override window close: hide to tray instead of quitting.
+  // Hide to tray on close instead of quitting.
   mainWindow.on("close", (event) => {
     if (!isQuittingForReal) {
       event.preventDefault();
@@ -117,9 +91,7 @@ function createWindow() {
     }
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
+  mainWindow.on("closed", () => { mainWindow = null; });
 }
 
 function createTray() {
@@ -128,86 +100,79 @@ function createTray() {
     : path.join(__dirname, "..", "dist", "favicon.png");
 
   let trayIcon = nativeImage.createFromPath(iconPath);
-  if (trayIcon.isEmpty()) {
-    trayIcon = nativeImage.createEmpty();
+  if (trayIcon.isEmpty()) trayIcon = nativeImage.createEmpty();
+
+  // macOS menu bar expects a 16×16 template image.
+  if (isMac && !trayIcon.isEmpty()) {
+    trayIcon = trayIcon.resize({ width: 16, height: 16 });
+    trayIcon.setTemplateImage(true);
   }
 
   tray = new Tray(trayIcon);
   tray.setToolTip("Magic Aisles");
-
-  const contextMenu = Menu.buildFromTemplate([
+  tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open Magic Aisles", click: showMainWindow },
     { type: "separator" },
-    {
-      label: "Quit Magic Aisles",
-      click: () => {
-        isQuittingForReal = true;
-        app.quit();
-      },
-    },
-  ]);
-  tray.setContextMenu(contextMenu);
-
+    { label: "Quit Magic Aisles", click: () => { isQuittingForReal = true; app.quit(); } },
+  ]));
   tray.on("click", showMainWindow);
   tray.on("double-click", showMainWindow);
 }
 
-// ─── IPC: focus window (legacy path kept for compatibility) ───────────────
-ipcMain.on("taskflow:focus-window", () => {
-  showMainWindow();
-});
+// ─── IPC: focus window ────────────────────────────────────────────────────
+ipcMain.on("taskflow:focus-window", () => { showMainWindow(); });
 
-// ─── IPC: Teams-style native desktop notification ────────────────────────
+// ─── IPC: native desktop notification (Mac + Windows) ────────────────────
 //
-//  Renderer sends:  ipcRenderer.send("notify:show", { title, body, route })
-//  Main fires a native Electron Notification with the app icon.
-//  Clicking the toast:
-//    1. Brings the window to the front.
-//    2. Sends "notify:clicked" back to the renderer with { route } so React
-//       can navigate to the right page (e.g. "/notifications").
+//  Renderer  →  ipcRenderer.send("notify:show", { title, body, route })
+//  Main      →  fires Electron native Notification
+//  User clicks toast
+//  Main      →  mainWindow.webContents.send("notify:clicked", { route })
+//  Renderer  →  navigates to route
 //
-//  macOS notes:
-//    • icon is intentionally omitted on macOS — the OS always uses the
-//      .app bundle icon in Notification Center; passing a custom icon
-//      causes the notification to silently fail on unsigned builds.
-//    • The app must be packaged (.dmg / .app) for macOS notifications to
-//      appear — they are blocked by the OS when loaded via file:// in dev.
-//    • electron-builder automatically injects NSUserNotificationAlertStyle
-//      = "alert" via the mac.extendInfo config (see package.json note below).
-//
-ipcMain.on("notify:show", (event, { title, body, route }) => {
+ipcMain.on("notify:show", (_event, payload) => {
   if (!Notification.isSupported()) return;
 
-  const isMac = process.platform === "darwin";
+  const title = payload?.title || "Magic Aisles";
+  const body  = payload?.body  || "";
+  const route = payload?.route || "/notifications";
 
-  // On Windows resolve the app icon; on macOS omit it (see note above).
-  let icon = undefined;
+  // macOS: never pass icon — OS uses the .app bundle icon automatically.
+  //        Passing a custom nativeImage silently suppresses the notification.
+  // Windows: attach favicon as the toast icon.
+  const notifOptions = { title, body, timeoutType: "default" };
+
   if (!isMac) {
     const iconPath = isDev
       ? path.join(__dirname, "..", "public", "favicon.png")
       : path.join(__dirname, "..", "dist", "favicon.png");
     const img = nativeImage.createFromPath(iconPath);
-    if (!img.isEmpty()) icon = img;
+    if (!img.isEmpty()) notifOptions.icon = img;
   }
 
-  const notification = new Notification({
-    title: title ?? "Magic Aisles",
-    body: body ?? "",
-    ...(icon ? { icon } : {}),
-    urgency: "normal",
-    timeoutType: "default",
-  });
+  let notif;
+  try {
+    notif = new Notification(notifOptions);
+  } catch (err) {
+    console.error("[notify] Failed to construct Notification:", err);
+    return;
+  }
 
-  notification.on("click", () => {
+  notif.on("click", () => {
     showMainWindow();
     if (mainWindow) {
-      mainWindow.webContents.send("notify:clicked", { route: route ?? "/notifications" });
+      mainWindow.webContents.send("notify:clicked", { route });
     }
   });
 
-  notification.show();
+  notif.on("failed", (_e, err) => {
+    console.error("[notify] Notification.show() failed:", err);
+  });
+
+  notif.show();
 });
 
+// ─── App lifecycle ────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow();
   createTray();
@@ -218,10 +183,7 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("window-all-closed", () => {
-  // intentionally empty — stay alive in the tray.
-});
+// Stay alive in tray — do NOT quit on window-all-closed.
+app.on("window-all-closed", () => {});
 
-app.on("before-quit", () => {
-  isQuittingForReal = true;
-});
+app.on("before-quit", () => { isQuittingForReal = true; });
