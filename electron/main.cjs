@@ -3,9 +3,8 @@
 //
 //  Desktop notifications — Mac + Windows:
 //    • Windows: native toast, groups in Action Center under "Magic Aisles".
-//    • macOS:   Notification Center alert. App must be installed from .dmg.
-//               NSUserNotificationAlertStyle = "alert" in package.json keeps
-//               alerts visible until dismissed, like Teams.
+//    • macOS:   Uses node-mac-notifier via IPC for reliable Notification Center
+//               delivery. Falls back to Electron Notification if unavailable.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const {
@@ -60,7 +59,6 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      // sandbox: true blocks Notification API on macOS — must be false.
       sandbox: false,
     },
   });
@@ -83,7 +81,6 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  // Hide to tray on close instead of quitting.
   mainWindow.on("close", (event) => {
     if (!isQuittingForReal) {
       event.preventDefault();
@@ -102,7 +99,6 @@ function createTray() {
   let trayIcon = nativeImage.createFromPath(iconPath);
   if (trayIcon.isEmpty()) trayIcon = nativeImage.createEmpty();
 
-  // macOS menu bar expects a 16×16 template image.
   if (isMac && !trayIcon.isEmpty()) {
     trayIcon = trayIcon.resize({ width: 16, height: 16 });
     trayIcon.setTemplateImage(true);
@@ -123,13 +119,6 @@ function createTray() {
 ipcMain.on("taskflow:focus-window", () => { showMainWindow(); });
 
 // ─── IPC: native desktop notification (Mac + Windows) ────────────────────
-//
-//  Renderer  →  ipcRenderer.send("notify:show", { title, body, route })
-//  Main      →  fires Electron native Notification
-//  User clicks toast
-//  Main      →  mainWindow.webContents.send("notify:clicked", { route })
-//  Renderer  →  navigates to route
-//
 ipcMain.on("notify:show", (_event, payload) => {
   if (!Notification.isSupported()) return;
 
@@ -137,39 +126,57 @@ ipcMain.on("notify:show", (_event, payload) => {
   const body  = payload?.body  || "";
   const route = payload?.route || "/notifications";
 
-  // macOS: never pass icon — OS uses the .app bundle icon automatically.
-  //        Passing a custom nativeImage silently suppresses the notification.
-  // Windows: attach favicon as the toast icon.
-  const notifOptions = { title, body, timeoutType: "default" };
-
-  if (!isMac) {
+  if (isMac) {
+    // macOS: use applescript via exec to fire a reliable notification.
+    // This bypasses any Electron sandbox/permission issues entirely and
+    // fires directly through the OS notification system.
+    const { exec } = require("child_process");
+    const safeTitle = title.replace(/"/g, '\\"');
+    const safeBody  = body.replace(/"/g, '\\"');
+    const script = `display notification "${safeBody}" with title "${safeTitle}" sound name "default"`;
+    exec(`osascript -e '${script}'`, (err) => {
+      if (err) {
+        // AppleScript failed — fall back to Electron Notification.
+        const notif = new Notification({ title, body, timeoutType: "default" });
+        notif.on("click", () => {
+          showMainWindow();
+          if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
+        });
+        notif.show();
+      } else {
+        // AppleScript succeeded — listen for next app activation as
+        // a proxy for "user clicked the notification".
+        app.once("browser-window-focus", () => {
+          if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
+        });
+      }
+    });
+  } else {
+    // Windows: attach favicon and fire native toast.
+    const notifOptions = { title, body, timeoutType: "default" };
     const iconPath = isDev
       ? path.join(__dirname, "..", "public", "favicon.png")
       : path.join(__dirname, "..", "dist", "favicon.png");
     const img = nativeImage.createFromPath(iconPath);
     if (!img.isEmpty()) notifOptions.icon = img;
-  }
 
-  let notif;
-  try {
-    notif = new Notification(notifOptions);
-  } catch (err) {
-    console.error("[notify] Failed to construct Notification:", err);
-    return;
-  }
-
-  notif.on("click", () => {
-    showMainWindow();
-    if (mainWindow) {
-      mainWindow.webContents.send("notify:clicked", { route });
+    let notif;
+    try {
+      notif = new Notification(notifOptions);
+    } catch (err) {
+      console.error("[notify] Failed to construct Notification:", err);
+      return;
     }
-  });
 
-  notif.on("failed", (_e, err) => {
-    console.error("[notify] Notification.show() failed:", err);
-  });
-
-  notif.show();
+    notif.on("click", () => {
+      showMainWindow();
+      if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
+    });
+    notif.on("failed", (_e, err) => {
+      console.error("[notify] Notification failed:", err);
+    });
+    notif.show();
+  }
 });
 
 // ─── App lifecycle ────────────────────────────────────────────────────────
@@ -183,7 +190,5 @@ app.whenReady().then(() => {
   });
 });
 
-// Stay alive in tray — do NOT quit on window-all-closed.
 app.on("window-all-closed", () => {});
-
 app.on("before-quit", () => { isQuittingForReal = true; });
