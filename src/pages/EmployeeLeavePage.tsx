@@ -149,6 +149,7 @@ function NewLeaveModal({ open, onClose }: { open: boolean; onClose: () => void }
   // Permission state — a short time-based leave on a single date
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const fmtTime = (t?: string | null) => (t ? t.slice(0, 5) : "");
 
   // Check how many casual leave days were approved this month (half-day = 0.5)
   const { data: approvedCasualDays = 0 } = useQuery({

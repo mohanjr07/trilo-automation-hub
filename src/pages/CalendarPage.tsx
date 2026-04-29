@@ -76,7 +76,7 @@ export default function CalendarPage() {
         .lte("start_date", format(calEnd, "yyyy-MM-dd"))
         .gte("end_date", format(calStart, "yyyy-MM-dd"));
       if (!isAdminOrManager) q = q.eq("employee_id", profile!.id);
-      let { data, error } = await q;
+      let { data, error } = await q as any;
       if (error) {
         let q2 = supabase.from("leave_requests")
           .select(baseCols)
@@ -85,7 +85,7 @@ export default function CalendarPage() {
           .gte("end_date", format(calStart, "yyyy-MM-dd"));
         if (!isAdminOrManager) q2 = q2.eq("employee_id", profile!.id);
         const res = await q2;
-        data = res.data ?? [];
+        data = (res.data ?? []) as any;
       }
       // Hide reverted leaves from the calendar (they no longer count as leave)
       return (data ?? []).filter((r: any) => !r.reverted_at);
