@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  electron/main.cjs — Magic Aisles desktop entry point.
 //
-//  Desktop notifications — Mac + Windows:
-//    • Windows: native toast, groups in Action Center under "Magic Aisles".
-//    • macOS:   Uses Electron Notification API directly (most reliable for
-//               unsigned/signed apps on macOS 12+). Falls back to osascript.
-//               App must have LSUIElement or run as a proper app bundle.
+//  macOS Teams-style popup notifications:
+//    - app.setName() BEFORE ready → Notification Center shows "Magic Aisles"
+//    - subtitle field → forces ALERT style (persistent popup, not banner)
+//    - requestMacNotificationPermission() → triggers one-time OS permission dialog
+//    - osascript heredoc fallback → works for unsigned/dev builds
 // ─────────────────────────────────────────────────────────────────────────────
 
 const {
@@ -17,23 +17,22 @@ const {
   nativeImage,
   ipcMain,
   Notification,
+  systemPreferences,
 } = require("electron");
 const path = require("path");
 const { exec } = require("child_process");
 
-const isDev = !app.isPackaged;
-const isMac = process.platform === "darwin";
+const isDev  = !app.isPackaged;
+const isMac  = process.platform === "darwin";
 
-// Set app name BEFORE ready — macOS Notification Center uses this to
-// attribute and group notifications under the correct app name (not "Electron").
+// CRITICAL: set app name BEFORE app.whenReady() so macOS Notification Center
+// attributes popups to "Magic Aisles" instead of "Electron".
 app.setName("Magic Aisles");
 
-// Windows only — makes toasts show "Magic Aisles" not "Electron".
 if (!isMac) {
   app.setAppUserModelId("com.magicaisles.app");
 }
 
-// ─── Single-instance lock ─────────────────────────────────────────────────
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -41,8 +40,8 @@ if (!gotSingleInstanceLock) {
   app.on("second-instance", () => { showMainWindow(); });
 }
 
-let mainWindow = null;
-let tray = null;
+let mainWindow        = null;
+let tray              = null;
 let isQuittingForReal = false;
 
 function showMainWindow() {
@@ -121,85 +120,81 @@ function createTray() {
   tray.on("double-click", showMainWindow);
 }
 
-// ─── IPC: focus window ────────────────────────────────────────────────────
 ipcMain.on("taskflow:focus-window", () => { showMainWindow(); });
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
-function getIconPath() {
-  const iconFile = isDev
-    ? path.join(__dirname, "..", "public", "favicon.png")
-    : path.join(__dirname, "..", "dist", "favicon.png");
-  return iconFile;
+// Request macOS notification permission proactively on first launch.
+// This shows the one-time OS "Allow Notifications?" dialog.
+async function requestMacNotificationPermission() {
+  if (!isMac) return;
+  try {
+    if (typeof systemPreferences.requestNotifications === "function") {
+      const granted = await systemPreferences.requestNotifications();
+      console.log("[notify] macOS permission:", granted ? "granted" : "denied");
+    }
+  } catch (err) {
+    // Older Electron versions don't have this API; the OS auto-prompts on first show().
+    console.log("[notify] requestNotifications unavailable (OK):", err.message);
+  }
 }
 
-// ─── macOS: show a Teams-style alert popup via Electron Notification ──────
-//
-//  Key insight: on macOS, Electron.Notification works reliably IF:
-//    1. The app is launched as a proper .app bundle (not via `electron .`)
-//    2. OR app.setName() and app.setAppUserModelId() are called before ready
-//    3. The notification has a subtitle to force "alert" presentation style
-//
-//  For unsigned/dev builds we ALSO try osascript as a second attempt.
-//
+// ── macOS popup notification (Teams-style) ────────────────────────────────
+// The `subtitle` field is the KEY to getting persistent alert-style popups.
+// Without it macOS shows a transient banner that auto-dismisses in 4 seconds.
+// With subtitle = "Magic Aisles", the OS treats it as an alert that stays
+// until the user clicks or dismisses it — exactly like Teams/Slack/Messages.
 function showMacNotification(title, body, route) {
-  // Strategy 1: Electron Notification API (works in signed + unsigned builds)
-  if (Notification.isSupported()) {
-    try {
-      const notif = new Notification({
-        title,
-        body,
-        subtitle: "Magic Aisles",   // Forces alert style on macOS (not just banner)
-        silent: false,               // Play the default macOS notification sound
-        timeoutType: "default",
-        // urgency is Windows-only; on macOS "alert" style is set via Info.plist
-      });
-
-      notif.on("click", () => {
-        showMainWindow();
-        if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
-      });
-
-      notif.on("show", () => {
-        console.log("[notify] macOS notification shown via Electron API");
-      });
-
-      notif.on("failed", (_e, err) => {
-        console.error("[notify] Electron Notification failed:", err);
-        // Cascade to osascript fallback
-        showMacNotificationViaOsascript(title, body, route);
-      });
-
-      notif.show();
-      return;
-    } catch (err) {
-      console.error("[notify] Electron Notification threw:", err);
-    }
+  if (!Notification.isSupported()) {
+    console.warn("[notify] Notification API unavailable, trying osascript");
+    showViaOsascript(title, body, route);
+    return;
   }
 
-  // Strategy 2: osascript (works even for unsigned/dev apps)
-  showMacNotificationViaOsascript(title, body, route);
+  let notif;
+  try {
+    notif = new Notification({
+      title,
+      body,
+      subtitle: "Magic Aisles",  // ← forces ALERT style (persistent popup)
+      silent: false,              // ← play notification sound
+      timeoutType: "default",
+    });
+  } catch (err) {
+    console.error("[notify] Notification() threw:", err);
+    showViaOsascript(title, body, route);
+    return;
+  }
+
+  notif.on("show",  () => console.log("[notify] ✓ macOS popup shown"));
+  notif.on("click", () => {
+    showMainWindow();
+    if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
+  });
+  notif.on("failed", (_e, err) => {
+    console.error("[notify] failed:", err);
+    showViaOsascript(title, body, route);
+  });
+
+  notif.show();
 }
 
-function showMacNotificationViaOsascript(title, body, route) {
-  // Escape double-quotes and single-quotes for AppleScript safety
-  const safeTitle = title.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const safeBody  = body.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+// Fallback: osascript via heredoc (immune to apostrophe/quote injection bugs).
+// Notifications appear under "Script Editor" in Notification Center on older
+// macOS; on macOS 13+ they appear under "System Events".
+function showViaOsascript(title, body, route) {
+  const t = (title || "Magic Aisles").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const b = (body  || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-  // Use the `osascript` heredoc form — avoids shell-quoting issues with
-  // single quotes inside the body text.
   const script = [
     `tell application "System Events"`,
-    `  display notification "${safeBody}" with title "${safeTitle}" subtitle "Magic Aisles" sound name "Funk"`,
+    `  display notification "${b}" with title "${t}" subtitle "Magic Aisles" sound name "Funk"`,
     `end tell`,
   ].join("\n");
 
-  exec(`osascript <<'APPLESCRIPT'\n${script}\nAPPLESCRIPT`, (err, stdout, stderr) => {
+  exec(`osascript <<'HEREDOC'\n${script}\nHEREDOC`, (err, _out, stderr) => {
     if (err) {
       console.error("[notify] osascript failed:", stderr || err.message);
     } else {
-      console.log("[notify] macOS notification shown via osascript");
-      // osascript notifications don't give us a click callback,
-      // so we fire notify:clicked when the user next focuses the app.
+      console.log("[notify] osascript notification sent");
       app.once("browser-window-focus", () => {
         if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
       });
@@ -207,49 +202,48 @@ function showMacNotificationViaOsascript(title, body, route) {
   });
 }
 
-// ─── IPC: native desktop notification (Mac + Windows) ────────────────────
+// ─── IPC handler ─────────────────────────────────────────────────────────
 ipcMain.on("notify:show", (_event, payload) => {
   const title = payload?.title || "Magic Aisles";
   const body  = payload?.body  || "";
   const route = payload?.route || "/notifications";
+
+  console.log(`[notify] notify:show received title="${title}"`);
 
   if (isMac) {
     showMacNotification(title, body, route);
     return;
   }
 
-  // ── Windows: attach favicon and fire native toast ──────────────────────
-  if (!Notification.isSupported()) {
-    console.warn("[notify] Notifications not supported on this platform");
-    return;
-  }
+  // Windows
+  if (!Notification.isSupported()) return;
 
-  const notifOptions = { title, body, timeoutType: "default" };
-  const img = nativeImage.createFromPath(getIconPath());
-  if (!img.isEmpty()) notifOptions.icon = img;
+  const iconPath = isDev
+    ? path.join(__dirname, "..", "public", "favicon.png")
+    : path.join(__dirname, "..", "dist", "favicon.png");
 
-  let notif;
+  const opts = { title, body, timeoutType: "default" };
+  const img  = nativeImage.createFromPath(iconPath);
+  if (!img.isEmpty()) opts.icon = img;
+
   try {
-    notif = new Notification(notifOptions);
+    const n = new Notification(opts);
+    n.on("click", () => {
+      showMainWindow();
+      if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
+    });
+    n.on("failed", (_e, err) => console.error("[notify] Windows failed:", err));
+    n.show();
   } catch (err) {
-    console.error("[notify] Failed to construct Notification:", err);
-    return;
+    console.error("[notify] Windows Notification() threw:", err);
   }
-
-  notif.on("click", () => {
-    showMainWindow();
-    if (mainWindow) mainWindow.webContents.send("notify:clicked", { route });
-  });
-  notif.on("failed", (_e, err) => {
-    console.error("[notify] Notification failed:", err);
-  });
-  notif.show();
 });
 
 // ─── App lifecycle ────────────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
   createTray();
+  await requestMacNotificationPermission();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
