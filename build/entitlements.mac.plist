@@ -2,15 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
-    <!-- Allow the app to show User Notifications (Notification Center popups) -->
+    <!-- No app sandbox — required for Electron apps that use native notifications -->
     <key>com.apple.security.app-sandbox</key>
     <false/>
 
-    <!-- Required for Electron apps to access the network -->
+    <!-- Network access (Supabase realtime) -->
     <key>com.apple.security.network.client</key>
     <true/>
 
-    <!-- Required to send user notifications from an unsigned/unnotarized app -->
+    <!-- Required for unsigned Electron to load native modules -->
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
 
