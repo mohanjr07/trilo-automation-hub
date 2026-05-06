@@ -154,7 +154,7 @@ export default function AdminLeavePage() {
       </div>
 
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard title="Total" value={requests.length} icon={CalendarIcon} />
+        <StatCard title="Total" value={visibleRequests.length} icon={CalendarIcon} />
         <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
         <StatCard title="Rejected" value={rejected} icon={XCircle} iconBg="bg-destructive-light" iconColor="text-destructive" />
         <StatCard title="Pending" value={pending} icon={Clock} iconBg="bg-warning-light" iconColor="text-warning" />
