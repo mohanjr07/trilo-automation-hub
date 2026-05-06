@@ -1116,6 +1116,10 @@ export type Database = {
       }
       get_user_role: { Args: { uid: string }; Returns: string }
       is_admin: { Args: { uid: string }; Returns: boolean }
+      is_manager_of: {
+        Args: { _employee_id: string; _manager_id: string }
+        Returns: boolean
+      }
       is_strict_admin: { Args: { uid: string }; Returns: boolean }
       reactivate_user: { Args: { p_email: string }; Returns: undefined }
       reset_user_password: {
