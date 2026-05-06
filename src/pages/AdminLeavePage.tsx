@@ -98,7 +98,7 @@ export default function AdminLeavePage() {
     queryKey: ["admin-leave"],
     queryFn: async () => {
       const { data } = await supabase.from("leave_requests")
-        .select("*, employee:profiles!leave_requests_employee_id_fkey(full_name, avatar_url, department)")
+        .select("*, employee:profiles!leave_requests_employee_id_fkey(full_name, avatar_url, department, manager_id)")
         .order("created_at", { ascending: false });
       return data ?? [];
     },
