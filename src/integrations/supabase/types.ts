@@ -1105,6 +1105,15 @@ export type Database = {
       deactivate_user: { Args: { p_email: string }; Returns: undefined }
       delete_app_user: { Args: { p_email: string }; Returns: undefined }
       delete_app_user_by_id: { Args: { p_user_id: string }; Returns: undefined }
+      get_active_profiles: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          full_name: string
+          id: string
+          role: string
+        }[]
+      }
       get_user_role: { Args: { uid: string }; Returns: string }
       is_admin: { Args: { uid: string }; Returns: boolean }
       is_strict_admin: { Args: { uid: string }; Returns: boolean }
