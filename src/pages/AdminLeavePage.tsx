@@ -104,12 +104,18 @@ export default function AdminLeavePage() {
     },
   });
 
-  const filtered = requests.filter((r: any) => {
+  const visibleRequests = requests.filter((r: any) => {
+    if (isStrictAdmin) return true;
+    if (isManager) return r.employee?.manager_id === user?.id;
+    return false;
+  });
+
+  const filtered = visibleRequests.filter((r: any) => {
     const isReverted = !!r.reverted_at;
     if (tab === "reverted") {
       if (!isReverted) return false;
     } else if (tab !== "all") {
-      if (isReverted) return false;           // hide reverted from pending/approved/rejected
+      if (isReverted) return false;
       if (r.status !== tab) return false;
     }
     if (search && !r.employee?.full_name?.toLowerCase().includes(search.toLowerCase())) return false;
