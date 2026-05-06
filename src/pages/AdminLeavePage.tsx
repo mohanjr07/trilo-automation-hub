@@ -19,7 +19,8 @@ import { exportLeavesToExcel } from "@/lib/leaveExcelExport";
 export default function AdminLeavePage() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
-  const isStrictAdmin = profile?.role === "admin";
+  const isStrictAdmin = profile?.role === "admin" || profile?.role === "super_admin";
+  const isManager = profile?.role === "manager";
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
   const [reviewReq, setReviewReq] = useState<any>(null);
