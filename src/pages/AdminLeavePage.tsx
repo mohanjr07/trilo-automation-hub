@@ -122,10 +122,10 @@ export default function AdminLeavePage() {
     return true;
   });
 
-  const pending = requests.filter((r: any) => r.status === "pending" && !r.reverted_at).length;
-  const approved = requests.filter((r: any) => r.status === "approved" && !r.reverted_at).length;
-  const rejected = requests.filter((r: any) => r.status === "rejected" && !r.reverted_at).length;
-  const reverted = requests.filter((r: any) => !!r.reverted_at).length;
+  const pending = visibleRequests.filter((r: any) => r.status === "pending" && !r.reverted_at).length;
+  const approved = visibleRequests.filter((r: any) => r.status === "approved" && !r.reverted_at).length;
+  const rejected = visibleRequests.filter((r: any) => r.status === "rejected" && !r.reverted_at).length;
+  const reverted = visibleRequests.filter((r: any) => !!r.reverted_at).length;
 
   const tabs = [
     { key: "all", label: "All" },
