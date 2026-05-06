@@ -19,7 +19,8 @@ import { exportLeavesToExcel } from "@/lib/leaveExcelExport";
 export default function AdminLeavePage() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
-  const isStrictAdmin = profile?.role === "admin";
+  const isStrictAdmin = profile?.role === "admin" || profile?.role === "super_admin";
+  const isManager = profile?.role === "manager";
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
   const [reviewReq, setReviewReq] = useState<any>(null);
@@ -97,28 +98,34 @@ export default function AdminLeavePage() {
     queryKey: ["admin-leave"],
     queryFn: async () => {
       const { data } = await supabase.from("leave_requests")
-        .select("*, employee:profiles!leave_requests_employee_id_fkey(full_name, avatar_url, department)")
+        .select("*, employee:profiles!leave_requests_employee_id_fkey(full_name, avatar_url, department, manager_id)")
         .order("created_at", { ascending: false });
       return data ?? [];
     },
   });
 
-  const filtered = requests.filter((r: any) => {
+  const visibleRequests = requests.filter((r: any) => {
+    if (isStrictAdmin) return true;
+    if (isManager) return r.employee?.manager_id === user?.id;
+    return false;
+  });
+
+  const filtered = visibleRequests.filter((r: any) => {
     const isReverted = !!r.reverted_at;
     if (tab === "reverted") {
       if (!isReverted) return false;
     } else if (tab !== "all") {
-      if (isReverted) return false;           // hide reverted from pending/approved/rejected
+      if (isReverted) return false;
       if (r.status !== tab) return false;
     }
     if (search && !r.employee?.full_name?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const pending = requests.filter((r: any) => r.status === "pending" && !r.reverted_at).length;
-  const approved = requests.filter((r: any) => r.status === "approved" && !r.reverted_at).length;
-  const rejected = requests.filter((r: any) => r.status === "rejected" && !r.reverted_at).length;
-  const reverted = requests.filter((r: any) => !!r.reverted_at).length;
+  const pending = visibleRequests.filter((r: any) => r.status === "pending" && !r.reverted_at).length;
+  const approved = visibleRequests.filter((r: any) => r.status === "approved" && !r.reverted_at).length;
+  const rejected = visibleRequests.filter((r: any) => r.status === "rejected" && !r.reverted_at).length;
+  const reverted = visibleRequests.filter((r: any) => !!r.reverted_at).length;
 
   const tabs = [
     { key: "all", label: "All" },
@@ -147,7 +154,7 @@ export default function AdminLeavePage() {
       </div>
 
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard title="Total" value={requests.length} icon={CalendarIcon} />
+        <StatCard title="Total" value={visibleRequests.length} icon={CalendarIcon} />
         <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
         <StatCard title="Rejected" value={rejected} icon={XCircle} iconBg="bg-destructive-light" iconColor="text-destructive" />
         <StatCard title="Pending" value={pending} icon={Clock} iconBg="bg-warning-light" iconColor="text-warning" />
@@ -195,7 +202,7 @@ export default function AdminLeavePage() {
               </p>
             </div>
             <StatusBadge status={displayStatus} />
-            {isStrictAdmin && req.status === "pending" && !isReverted && (
+            {(isStrictAdmin || (isManager && req.employee?.manager_id === user?.id)) && req.status === "pending" && !isReverted && (
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="text-success border-success/30 hover:bg-success-light"
                   onClick={() => setReviewReq({ ...req, action: "approved" })}>✓</Button>
@@ -383,7 +390,7 @@ function AssignLeaveModal({ open, onClose }: { open: boolean; onClose: () => voi
         payload.start_time = startTime;
         payload.end_time = endTime;
       }
-      const { error } = await supabase.from("leave_requests").insert([payload]);
+      const { error } = await supabase.from("leave_requests").insert([payload as any]);
       if (error) throw error;
     },
     onSuccess: () => {

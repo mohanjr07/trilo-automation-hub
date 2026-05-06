@@ -418,7 +418,7 @@ function NewLeaveModal({ open, onClose }: { open: boolean; onClose: () => void }
                   </div>
                   {startTime && endTime && startTime < endTime && (
                     <p className="text-[11px] text-ink-muted -mt-2">
-                      You're requesting permission from {fmtTime(startTime)} to {fmtTime(endTime)}
+                      You're requesting permission from {startTime} to {endTime}
                       {startDate && ` on ${format(new Date(startDate), "MMM d, yyyy")}`}.
                     </p>
                   )}
