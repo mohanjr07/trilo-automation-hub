@@ -372,14 +372,14 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
           <div>
             <label className="mb-1.5 block text-sm font-medium text-ink-primary">Role *</label>
             <div className="grid grid-cols-2 gap-3">
-              {(["admin", "manager", "employee", "intern"] as const).map((r) => (
+              {([...(isSuperAdmin ? ["super_admin"] as const : []), "admin", "manager", "employee", "intern"] as const).map((r) => (
                 <button key={r} type="button" onClick={() => setValue("role", r)}
                   className={`rounded-lg border p-4 text-left transition-all ${selectedRole === r ? "border-primary bg-accent-light" : "border-border"}`}>
                   <div className="flex items-center gap-2 mb-1">
-                    {r === "admin" ? <Shield className="h-4 w-4 text-primary" /> : r === "manager" ? <UserCheck className="h-4 w-4 text-primary" /> : r === "intern" ? <UsersIcon className="h-4 w-4 text-warning" /> : <UsersIcon className="h-4 w-4 text-ink-muted" />}
-                    <span className="text-sm font-semibold capitalize text-ink-primary">{r}</span>
+                    {r === "super_admin" ? <Shield className="h-4 w-4 text-destructive" /> : r === "admin" ? <Shield className="h-4 w-4 text-primary" /> : r === "manager" ? <UserCheck className="h-4 w-4 text-primary" /> : r === "intern" ? <UsersIcon className="h-4 w-4 text-warning" /> : <UsersIcon className="h-4 w-4 text-ink-muted" />}
+                    <span className="text-sm font-semibold capitalize text-ink-primary">{r.replace("_", " ")}</span>
                   </div>
-                  <p className="text-xs text-ink-muted">{r === "admin" ? "Full access & user management" : r === "manager" ? "All admin access except user management" : r === "intern" ? "Dashboard, tasks & notes only" : "View tasks & submit requests"}</p>
+                  <p className="text-xs text-ink-muted">{r === "super_admin" ? "Highest access — approves admin leave" : r === "admin" ? "Full access & user management" : r === "manager" ? "All admin access except user management" : r === "intern" ? "Dashboard, tasks & notes only" : "View tasks & submit requests"}</p>
                 </button>
               ))}
             </div>
