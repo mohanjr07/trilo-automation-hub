@@ -139,6 +139,7 @@ export default function UsersPage() {
           <SelectTrigger className="w-[140px] h-10"><SelectValue placeholder="Role" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Roles</SelectItem>
+            <SelectItem value="super_admin">Super Admin</SelectItem>
             <SelectItem value="admin">Admin</SelectItem>
             <SelectItem value="manager">Manager</SelectItem>
             <SelectItem value="employee">Employee</SelectItem>
@@ -287,7 +288,7 @@ export default function UsersPage() {
 const addUserSchema = z.object({
   full_name: z.string().min(1, "Name is required").max(100),
   email: z.string().email("Invalid email").max(255),
-  role: z.enum(["admin", "manager", "employee", "intern"]),
+  role: z.enum(["super_admin", "admin", "manager", "employee", "intern"]),
   department: z.string().max(100).optional(),
   position: z.string().max(100).optional(),
   phone: z.string().max(20).optional(),
@@ -296,7 +297,8 @@ const addUserSchema = z.object({
 
 function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { profile } = useAuth();
+  const isSuperAdmin = profile?.role === "super_admin";
   const [passwordMode, setPasswordMode] = useState<"email" | "password">("email");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -370,14 +372,14 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
           <div>
             <label className="mb-1.5 block text-sm font-medium text-ink-primary">Role *</label>
             <div className="grid grid-cols-2 gap-3">
-              {(["admin", "manager", "employee", "intern"] as const).map((r) => (
+              {([...(isSuperAdmin ? ["super_admin"] as const : []), "admin", "manager", "employee", "intern"] as const).map((r) => (
                 <button key={r} type="button" onClick={() => setValue("role", r)}
                   className={`rounded-lg border p-4 text-left transition-all ${selectedRole === r ? "border-primary bg-accent-light" : "border-border"}`}>
                   <div className="flex items-center gap-2 mb-1">
-                    {r === "admin" ? <Shield className="h-4 w-4 text-primary" /> : r === "manager" ? <UserCheck className="h-4 w-4 text-primary" /> : r === "intern" ? <UsersIcon className="h-4 w-4 text-warning" /> : <UsersIcon className="h-4 w-4 text-ink-muted" />}
-                    <span className="text-sm font-semibold capitalize text-ink-primary">{r}</span>
+                    {r === "super_admin" ? <Shield className="h-4 w-4 text-destructive" /> : r === "admin" ? <Shield className="h-4 w-4 text-primary" /> : r === "manager" ? <UserCheck className="h-4 w-4 text-primary" /> : r === "intern" ? <UsersIcon className="h-4 w-4 text-warning" /> : <UsersIcon className="h-4 w-4 text-ink-muted" />}
+                    <span className="text-sm font-semibold capitalize text-ink-primary">{r.replace("_", " ")}</span>
                   </div>
-                  <p className="text-xs text-ink-muted">{r === "admin" ? "Full access & user management" : r === "manager" ? "All admin access except user management" : r === "intern" ? "Dashboard, tasks & notes only" : "View tasks & submit requests"}</p>
+                  <p className="text-xs text-ink-muted">{r === "super_admin" ? "Highest access — approves admin leave" : r === "admin" ? "Full access & user management" : r === "manager" ? "All admin access except user management" : r === "intern" ? "Dashboard, tasks & notes only" : "View tasks & submit requests"}</p>
                 </button>
               ))}
             </div>
@@ -445,6 +447,8 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
 // Edit User Modal
 function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
+  const isSuperAdmin = profile?.role === "super_admin";
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
@@ -501,6 +505,9 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
             <Select value={watch("role")} onValueChange={(v) => setValue("role", v)}>
               <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
               <SelectContent>
+                {(isSuperAdmin || editingUser.role === "super_admin") && (
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                )}
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="employee">Employee</SelectItem>
