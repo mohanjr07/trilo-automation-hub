@@ -505,6 +505,9 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
             <Select value={watch("role")} onValueChange={(v) => setValue("role", v)}>
               <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
               <SelectContent>
+                {(isSuperAdmin || editingUser.role === "super_admin") && (
+                  <SelectItem value="super_admin">Super Admin</SelectItem>
+                )}
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="employee">Employee</SelectItem>
