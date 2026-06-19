@@ -25,6 +25,7 @@ const adminNav: NavItem[] = [
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
+  { label: "My Leave", path: "/my-leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Notes", path: "/notes", icon: StickyNote },
   { label: "Settings", path: "/settings", icon: Settings },
