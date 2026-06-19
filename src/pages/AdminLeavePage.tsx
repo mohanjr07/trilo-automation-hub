@@ -216,7 +216,7 @@ export default function AdminLeavePage() {
               </p>
             </div>
             <StatusBadge status={displayStatus} />
-            {(isStrictAdmin || (isManager && req.employee?.manager_id === user?.id)) && req.status === "pending" && !isReverted && (
+            {canReview(req) && req.status === "pending" && !isReverted && (
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" className="text-success border-success/30 hover:bg-success-light"
                   onClick={() => setReviewReq({ ...req, action: "approved" })}>✓</Button>
