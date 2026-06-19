@@ -68,16 +68,16 @@ const App = () => (
             <Route path="/" element={<RootRedirect />} />
 
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-              <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><AdminDashboard /></ProtectedRoute>} />
-              <Route path="/tasks" element={<ProtectedRoute allowedRoles={["admin", "manager", "employee"]}><TasksPage /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><AdminDashboard /></ProtectedRoute>} />
+              <Route path="/tasks" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager", "employee"]}><TasksPage /></ProtectedRoute>} />
               <Route path="/projects" element={<ProjectsPage />} />
               {/* Organisation Flow — visible to every signed-in role.
                   Admin-only writes are enforced at the DB level via RLS. */}
               <Route path="/organisation-flow" element={<OrganisationFlowPage />} />
-              <Route path="/users" element={<ProtectedRoute allowedRoles={["admin"]}><UsersPage /></ProtectedRoute>} />
-              <Route path="/team" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><Navigate to="/users" replace /></ProtectedRoute>} />
-              <Route path="/leave" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><AdminLeavePage /></ProtectedRoute>} />
-              <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><ReportsPage /></ProtectedRoute>} />
+              <Route path="/users" element={<ProtectedRoute allowedRoles={["super_admin", "admin"]}><UsersPage /></ProtectedRoute>} />
+              <Route path="/team" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><Navigate to="/users" replace /></ProtectedRoute>} />
+              <Route path="/leave" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><AdminLeavePage /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><ReportsPage /></ProtectedRoute>} />
               <Route path="/calendar" element={<CalendarPage />} />
               {/* Team Members — replaces the old Microsoft-Teams-style /teams page.
                   Visible to everyone signed in. Admin assigns; manager sees own team;
@@ -86,7 +86,7 @@ const App = () => (
               {/* Legacy redirects so existing /teams and /my-teams links don't 404 */}
               <Route path="/teams" element={<Navigate to="/team-members" replace />} />
               <Route path="/my-teams" element={<Navigate to="/team-members" replace />} />
-              <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><SettingsPage /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><SettingsPage /></ProtectedRoute>} />
               <Route path="/my-dashboard" element={<ProtectedRoute allowedRoles={["employee"]}><EmployeeDashboard /></ProtectedRoute>} />
               <Route path="/my-tasks" element={<ProtectedRoute allowedRoles={["employee", "manager"]}><TasksPage myTasksOnly /></ProtectedRoute>} />
               <Route path="/my-leave" element={<ProtectedRoute allowedRoles={["employee", "manager"]}><EmployeeLeavePage /></ProtectedRoute>} />
@@ -94,7 +94,7 @@ const App = () => (
               <Route path="/intern-tasks" element={<ProtectedRoute allowedRoles={["intern"]}><TasksPage myTasksOnly /></ProtectedRoute>} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/notes" element={<NotesPage />} />
-              <Route path="/assets" element={<ProtectedRoute allowedRoles={["admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
+              <Route path="/assets" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
               <Route path="/kra-kpi" element={<KraKpiPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/profile" element={<ProfilePage />} />
