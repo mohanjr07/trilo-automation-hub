@@ -19,8 +19,22 @@ import { exportLeavesToExcel } from "@/lib/leaveExcelExport";
 export default function AdminLeavePage() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+  const isSuperAdmin = profile?.role === "super_admin";
   const isStrictAdmin = profile?.role === "admin" || profile?.role === "super_admin";
   const isManager = profile?.role === "manager";
+
+  // A leave request requires super-admin approval when the requester is an admin or super_admin.
+  // Regular admins cannot approve admin/super_admin leave (or their own).
+  const canReview = (req: any) => {
+    const empRole = req.employee?.role;
+    const isAdminLeave = empRole === "admin" || empRole === "super_admin";
+    if (isAdminLeave) {
+      return isSuperAdmin && req.employee_id !== user?.id;
+    }
+    if (isStrictAdmin) return true;
+    if (isManager) return req.employee?.manager_id === user?.id;
+    return false;
+  };
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
   const [reviewReq, setReviewReq] = useState<any>(null);
