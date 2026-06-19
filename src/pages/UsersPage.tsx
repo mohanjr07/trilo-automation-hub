@@ -297,7 +297,8 @@ const addUserSchema = z.object({
 
 function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { profile } = useAuth();
+  const isSuperAdmin = profile?.role === "super_admin";
   const [passwordMode, setPasswordMode] = useState<"email" | "password">("email");
   const [showPassword, setShowPassword] = useState(false);
 
