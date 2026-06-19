@@ -447,6 +447,8 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
 // Edit User Modal
 function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
+  const isSuperAdmin = profile?.role === "super_admin";
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
