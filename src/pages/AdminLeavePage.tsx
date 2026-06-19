@@ -40,6 +40,8 @@ export default function AdminLeavePage() {
   const [reviewReq, setReviewReq] = useState<any>(null);
   const [showAssignLeave, setShowAssignLeave] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showMyLeave, setShowMyLeave] = useState(false);
+  const [showRequestLeave, setShowRequestLeave] = useState(false);
 
   const clearRequest = useMutation({
     mutationFn: async (id: string) => {
@@ -118,6 +120,18 @@ export default function AdminLeavePage() {
     },
   });
 
+
+  // Admin's own leave requests (to be approved by super_admin)
+  const { data: myRequests = [] } = useQuery({
+    queryKey: ["my-leave", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("leave_requests").select("*").eq("employee_id", user!.id).order("created_at", { ascending: false });
+      return data ?? [];
+    },
+    enabled: !!user,
+  });
+  const myPending = myRequests.filter((r: any) => r.status === "pending" && !r.reverted_at).length;
+
   const visibleRequests = requests.filter((r: any) => {
     if (isStrictAdmin) return true;
     if (isManager) return r.employee?.manager_id === user?.id;
@@ -160,6 +174,9 @@ export default function AdminLeavePage() {
             <Button onClick={() => setShowExport(true)} size="sm" variant="outline">
               <FileSpreadsheet className="h-4 w-4 mr-1.5" /> Export to Excel
             </Button>
+            <Button onClick={() => setShowMyLeave((v) => !v)} size="sm" variant={showMyLeave ? "default" : "outline"}>
+              <CalendarIcon className="h-4 w-4 mr-1.5" /> My Leave{myPending > 0 ? ` (${myPending})` : ""}
+            </Button>
             <Button onClick={() => setShowAssignLeave(true)} size="sm">
               <Plus className="h-4 w-4 mr-1.5" /> Assign Leave
             </Button>
@@ -167,6 +184,10 @@ export default function AdminLeavePage() {
         )}
       </div>
 
+      {showMyLeave ? (
+        <MyLeaveSection myRequests={myRequests} onRequestLeave={() => setShowRequestLeave(true)} />
+      ) : (
+      <>
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard title="Total" value={visibleRequests.length} icon={CalendarIcon} />
         <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
@@ -250,6 +271,9 @@ export default function AdminLeavePage() {
       <ReviewModal request={reviewReq} onClose={() => setReviewReq(null)} />
       {isStrictAdmin && <AssignLeaveModal open={showAssignLeave} onClose={() => setShowAssignLeave(false)} />}
       {isStrictAdmin && <ExportLeaveModal open={showExport} onClose={() => setShowExport(false)} />}
+      </>
+      )}
+      <NewLeaveModal open={showRequestLeave} onClose={() => setShowRequestLeave(false)} />
     </AnimatedPage>
   );
 }
@@ -698,6 +722,235 @@ function ExportLeaveModal({ open, onClose }: { open: boolean; onClose: () => voi
               <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
               <Button onClick={handleExport} disabled={exporting} className="flex-1">
                 {exporting ? "Generating..." : "Download .xlsx"}
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─── My Leave Section ────────────────────────────────────────────────────────
+function MyLeaveSection({ myRequests, onRequestLeave }: { myRequests: any[]; onRequestLeave: () => void }) {
+  const [tab, setTab] = useState("all");
+  const approved = myRequests.filter((r: any) => r.status === "approved" && !r.reverted_at).length;
+  const pending = myRequests.filter((r: any) => r.status === "pending" && !r.reverted_at).length;
+
+  const tabs = [
+    { key: "all", label: "All" },
+    { key: "pending", label: `Pending (${pending})` },
+    { key: "approved", label: "Approved" },
+    { key: "rejected", label: "Rejected" },
+  ];
+
+  const filtered = myRequests.filter((r: any) => {
+    if (tab === "all") return true;
+    return r.status === tab && !r.reverted_at;
+  });
+
+  const fmtTime = (t?: string | null) => (t ? t.slice(0, 5) : "");
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-heading text-lg font-semibold text-ink-primary">My Leave Requests</h2>
+        <Button size="sm" onClick={onRequestLeave} className="gap-2">
+          <Plus className="h-4 w-4" /> New Request
+        </Button>
+      </div>
+      <p className="text-xs text-ink-muted mb-4 bg-warning-light text-warning rounded-lg px-3 py-2">
+        Your leave requests require <strong>Super Admin</strong> approval.
+      </p>
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-3 gap-4 mb-6">
+        <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
+        <StatCard title="Pending" value={pending} icon={Clock} iconBg="bg-warning-light" iconColor="text-warning" />
+        <StatCard title="Total" value={myRequests.length} icon={CalendarIcon} />
+      </motion.div>
+      <div className="flex gap-1 mb-6 border-b border-border">
+        {tabs.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${tab === t.key ? "text-primary" : "text-ink-muted hover:text-ink-secondary"}`}>
+            {t.label}
+            {tab === t.key && <motion.div layoutId="my-leave-admin-tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+          </button>
+        ))}
+      </div>
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-3">
+        {filtered.map((req: any) => (
+          <motion.div key={req.id} variants={staggerItem}
+            className="rounded-card bg-card p-4 shadow-card border-l-4"
+            style={{ borderLeftColor: req.status === "pending" ? "hsl(32,95%,44%)" : req.status === "approved" ? "hsl(142,72%,39%)" : "hsl(0,72%,51%)" }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex gap-2 mb-1 flex-wrap">
+                  <span className="text-xs font-medium bg-accent-light text-primary px-2 py-0.5 rounded-pill capitalize">
+                    {req.leave_category === "casual_leave" ? "Casual Leave" : req.leave_category === "on_duty" ? "On Duty" : req.leave_category === "work_from_home" ? "Work From Home" : req.leave_category === "permission" || req.type === "permission" ? "Permission" : req.leave_category ?? req.type}
+                  </span>
+                  {req.is_half_day && <span className="text-xs font-medium bg-purple-light text-purple px-2 py-0.5 rounded-pill">Half Day{req.half_day_period ? ` · ${req.half_day_period}` : ""}</span>}
+                </div>
+                <p className="text-sm text-ink-primary font-medium">
+                  {req.start_date && format(new Date(req.start_date), "MMM d, yyyy")}
+                  {req.end_date && req.end_date !== req.start_date && ` — ${format(new Date(req.end_date), "MMM d, yyyy")}`}
+                  {req.start_time && ` · ${fmtTime(req.start_time)}–${fmtTime(req.end_time)}`}
+                </p>
+                <p className="text-xs text-ink-muted mt-1">{req.reason}</p>
+                {req.admin_note && req.status === "rejected" && (
+                  <div className="mt-2 rounded-lg bg-destructive-light px-3 py-2 text-xs text-destructive">{req.admin_note}</div>
+                )}
+              </div>
+              <StatusBadge status={req.status ?? "pending"} />
+            </div>
+          </motion.div>
+        ))}
+        {filtered.length === 0 && <div className="py-16 text-center text-sm text-ink-muted">No requests found</div>}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── New Leave Modal (for admin self-request) ─────────────────────────────────
+function NewLeaveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [category, setCategory] = useState("casual_leave");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [isHalfDay, setIsHalfDay] = useState(false);
+  const [halfDayPeriod, setHalfDayPeriod] = useState<"AM" | "PM">("AM");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+
+  const isPermission = category === "permission";
+  const isWFH = category === "work_from_home";
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      if (isPermission) {
+        if (!startTime || !endTime) { toast.error("Start and end time required"); throw new Error("missing time"); }
+        if (startTime >= endTime) { toast.error("End time must be after start time"); throw new Error("bad time"); }
+      }
+      const useHalfDay = category === "casual_leave" && isHalfDay;
+      const payload: any = {
+        employee_id: user!.id,
+        type: isPermission ? "permission" : "leave",
+        reason,
+        start_date: startDate,
+        end_date: isPermission || useHalfDay ? startDate : (endDate || startDate),
+        leave_category: isPermission ? "permission" : category,
+      };
+      if (useHalfDay) { payload.is_half_day = true; payload.half_day_period = halfDayPeriod; }
+      if (isPermission) { payload.start_time = startTime; payload.end_time = endTime; }
+      const { error } = await supabase.from("leave_requests").insert([payload]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-leave"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-leave"] });
+      toast.success("Request submitted — awaiting Super Admin approval");
+      setCategory("casual_leave"); setStartDate(""); setEndDate(""); setReason("");
+      setIsHalfDay(false); setHalfDayPeriod("AM"); setStartTime(""); setEndTime("");
+      onClose();
+    },
+    onError: (e: any) => { if (e?.message === "missing time" || e?.message === "bad time") return; toast.error(e.message); },
+  });
+
+  const categories = [
+    { value: "casual_leave", label: "Casual Leave" },
+    { value: "on_duty", label: "On Duty" },
+    { value: "work_from_home", label: "Work From Home" },
+    { value: "unauthorised_leave", label: "Unauthorised Leave" },
+    { value: "permission", label: "Permission" },
+  ];
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
+          <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 40 }}
+            className="relative w-full md:max-w-[500px] rounded-t-modal md:rounded-modal bg-card p-6 shadow-modal">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-heading text-xl font-bold text-ink-primary">
+                {isPermission ? "New Permission Request" : isWFH ? "WFH Request" : "New Leave Request"}
+              </h2>
+              <button onClick={onClose} className="text-ink-muted"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="text-xs text-warning bg-warning-light rounded-lg px-3 py-2 mb-4">This request will be sent to Super Admin for approval.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Leave Type</label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {category === "casual_leave" && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-medium text-ink-primary">Half Day Leave</label>
+                    <button type="button" onClick={() => setIsHalfDay((v) => !v)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isHalfDay ? "bg-primary" : "bg-muted-foreground/30"}`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isHalfDay ? "translate-x-6" : "translate-x-1"}`} />
+                    </button>
+                  </div>
+                  {isHalfDay && (
+                    <div className="mt-3">
+                      <label className="mb-1.5 block text-xs font-medium text-ink-primary">Which half?</label>
+                      <div className="flex gap-2">
+                        {(["AM", "PM"] as const).map((p) => (
+                          <button key={p} type="button" onClick={() => setHalfDayPeriod(p)}
+                            className={`flex-1 rounded-lg border py-1.5 text-sm font-medium transition-all ${halfDayPeriod === p ? "bg-primary text-white border-primary" : "border-border text-ink-secondary hover:bg-muted"}`}>
+                            {p === "AM" ? "First half (AM)" : "Second half (PM)"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isPermission ? (
+                <>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Date</label>
+                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Start Time</label>
+                      <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="h-10" />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">End Time</label>
+                      <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="h-10" />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">{isHalfDay ? "Date" : "Start Date"}</label>
+                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10" />
+                  </div>
+                  {!isHalfDay && (
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">End Date</label>
+                      <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-10" />
+                    </div>
+                  )}
+                </div>
+              )}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Reason</label>
+                <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Explain your reason..." />
+              </div>
+              <Button onClick={() => submit.mutate()}
+                disabled={submit.isPending || !startDate || !reason || (isPermission && (!startTime || !endTime))}
+                className="w-full h-11">
+                {submit.isPending ? "Submitting..." : isPermission ? "Request Permission" : isWFH ? "Request WFH" : "Submit Request"}
               </Button>
             </div>
           </motion.div>
