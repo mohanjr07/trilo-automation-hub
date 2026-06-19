@@ -31,6 +31,23 @@ const adminNav: NavItem[] = [
   { label: "Settings", path: "/settings", icon: Settings },
 ];
 
+const superAdminNav: NavItem[] = [
+  { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { label: "Tasks", path: "/tasks", icon: CheckSquare },
+  { label: "Projects", path: "/projects", icon: FolderKanban },
+  { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
+  { label: "Assets", path: "/assets", icon: Boxes },
+  { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
+  { label: "Documents", path: "/documents", icon: FileText },
+  { label: "Users", path: "/users", icon: Users },
+  { label: "Team Members", path: "/team-members", icon: Workflow },
+  { label: "Calendar", path: "/calendar", icon: Calendar },
+  { label: "All Leaves", path: "/leave", icon: Calendar },
+  { label: "Reports", path: "/reports", icon: BarChart3 },
+  { label: "Notes", path: "/notes", icon: StickyNote },
+  { label: "Settings", path: "/settings", icon: Settings },
+];
+
 const managerNav: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
@@ -83,10 +100,11 @@ export default function AppLayout() {
   const [isDark, setIsDark] = useState(() =>
     typeof window !== "undefined" && document.documentElement.classList.contains("dark")
   );
-  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
+  const isSuperAdmin = profile?.role === "super_admin";
+  const isAdmin = profile?.role === "admin";
   const isManager = profile?.role === "manager";
   const isIntern = profile?.role === "intern";
-  const nav = isAdmin ? adminNav : isManager ? managerNav : isIntern ? internNav : employeeNav;
+  const nav = isSuperAdmin ? superAdminNav : isAdmin ? adminNav : isManager ? managerNav : isIntern ? internNav : employeeNav;
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
