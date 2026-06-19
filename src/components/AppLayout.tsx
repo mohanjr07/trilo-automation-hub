@@ -83,7 +83,7 @@ export default function AppLayout() {
   const [isDark, setIsDark] = useState(() =>
     typeof window !== "undefined" && document.documentElement.classList.contains("dark")
   );
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
   const isManager = profile?.role === "manager";
   const isIntern = profile?.role === "intern";
   const nav = isAdmin ? adminNav : isManager ? managerNav : isIntern ? internNav : employeeNav;
