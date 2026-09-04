@@ -14,6 +14,7 @@ import UserAvatar from "@/components/UserAvatar";
 import PriorityBadge from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import TaskDetailModal from "@/components/TaskDetailModal";
+import ProjectPhotosSection from "@/components/ProjectPhotoCapture";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -346,6 +347,12 @@ function ProjectCard({
             className="overflow-hidden"
           >
             <div className="border-t border-border px-5 py-4">
+
+              {(isAdmin || isMemberOfProject) && (
+                <div className="mb-4">
+                  <ProjectPhotosSection projectId={project.id} />
+                </div>
+              )}
 
               {/* ── ADMIN VIEW ── */}
               {isAdmin ? (
