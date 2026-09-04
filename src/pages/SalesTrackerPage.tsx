@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format, isToday } from "date-fns";
+import { format } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
-  Phone, User as UserIcon, Clock, Route as RouteIcon, AlarmClock,
+  Phone, User as UserIcon, Clock, Route as RouteIcon, AlarmClock, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -47,46 +47,78 @@ type SiteVisit = {
   id: string; user_id: string; visit_date: string; site_name: string; location: string;
   contact_person: string | null; contact_phone: string | null; purpose: string | null; notes: string | null;
   trip_status: string; km_start: number | null; km_end: number | null; started_at: string | null; ended_at: string | null;
+  trip_group_id: string; stop_order: number; created_at: string;
 };
+
+/** Groups site_visits rows that belong to the same trip (same trip_group_id),
+ * stops ordered by stop_order, groups ordered newest-first. */
+function groupTrips(visits: SiteVisit[]): SiteVisit[][] {
+  const byGroup = new Map<string, SiteVisit[]>();
+  for (const v of visits) {
+    const arr = byGroup.get(v.trip_group_id) ?? [];
+    arr.push(v);
+    byGroup.set(v.trip_group_id, arr);
+  }
+  const groups = Array.from(byGroup.values()).map((g) => [...g].sort((a, b) => a.stop_order - b.stop_order));
+  groups.sort((a, b) => new Date(b[0].created_at).getTime() - new Date(a[0].created_at).getTime());
+  return groups;
+}
+
+type SiteStop = {
+  siteName: string;
+  location: string;
+  contactPerson: string;
+  contactPhone: string;
+  purpose: string;
+  notes: string;
+};
+
+const emptyStop = (): SiteStop => ({ siteName: "", location: "", contactPerson: "", contactPhone: "", purpose: "", notes: "" });
 
 function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [siteName, setSiteName] = useState("");
-  const [location, setLocation] = useState("");
-  const [contactPerson, setContactPerson] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [notes, setNotes] = useState("");
+  const [sites, setSites] = useState<SiteStop[]>([emptyStop()]);
   const [kmStart, setKmStart] = useState("");
 
   const reset = () => {
-    setSiteName(""); setLocation(""); setContactPerson(""); setContactPhone(""); setPurpose(""); setNotes(""); setKmStart("");
+    setSites([emptyStop()]);
+    setKmStart("");
   };
+
+  const updateStop = (index: number, patch: Partial<SiteStop>) => {
+    setSites((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  };
+  const addStop = () => setSites((prev) => [...prev, emptyStop()]);
+  const removeStop = (index: number) => setSites((prev) => prev.filter((_, i) => i !== index));
 
   const create = useMutation({
     mutationFn: async () => {
       const km = kmStart.trim() ? parseFloat(kmStart) : null;
       const startingTrip = km != null && !isNaN(km);
-      const { error } = await supabase.from("site_visits").insert({
+      const tripGroupId = crypto.randomUUID();
+      const rows = sites.map((s, i) => ({
         user_id: user!.id,
         visit_date: today(),
-        site_name: siteName.trim(),
-        location: location.trim(),
-        contact_person: contactPerson.trim() || null,
-        contact_phone: contactPhone.trim() || null,
-        purpose: purpose.trim() || null,
-        notes: notes.trim() || null,
+        trip_group_id: tripGroupId,
+        stop_order: i + 1,
+        site_name: s.siteName.trim(),
+        location: s.location.trim(),
+        contact_person: s.contactPerson.trim() || null,
+        contact_phone: s.contactPhone.trim() || null,
+        purpose: s.purpose.trim() || null,
+        notes: s.notes.trim() || null,
         ...(startingTrip
           ? { trip_status: "in_progress", km_start: km, started_at: new Date().toISOString() }
           : {}),
-      });
+      }));
+      const { error } = await supabase.from("site_visits").insert(rows);
       if (error) throw error;
       return { startingTrip };
     },
     onSuccess: ({ startingTrip }) => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success(startingTrip ? "Trip started — your manager has been notified" : "Site visit logged — your manager has been notified");
+      toast.success(startingTrip ? "Trip started — your manager has been notified" : "Site visit(s) logged — your manager has been notified");
       reset();
       onClose();
     },
@@ -103,7 +135,7 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="relative w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
+            className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
           >
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-heading text-xl font-bold text-ink-primary">New Site Visit</h2>
@@ -112,48 +144,72 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!siteName.trim() || !location.trim()) {
-                  toast.error("Site name and location are required");
+                const incomplete = sites.some((s) => !s.siteName.trim() || !s.location.trim());
+                if (incomplete) {
+                  toast.error("Site name and location are required for every site");
                   return;
                 }
                 create.mutate();
               }}
-              className="space-y-4"
+              className="space-y-5"
             >
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Site / Client name *</label>
-                <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} autoFocus />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Location / Address *</label>
-                <Input value={location} onChange={(e) => setLocation(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact person</label>
-                  <Input value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} />
+              {sites.map((stop, index) => (
+                <div key={index} className="rounded-lg border border-border p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-ink-primary">Site {index + 1}</p>
+                    {sites.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeStop(index)}
+                        className="text-ink-muted hover:text-destructive"
+                        aria-label={`Remove site ${index + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Site / Client name *</label>
+                    <Input value={stop.siteName} onChange={(e) => updateStop(index, { siteName: e.target.value })} autoFocus={index === 0} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Location / Address *</label>
+                    <Input value={stop.location} onChange={(e) => updateStop(index, { location: e.target.value })} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact person</label>
+                      <Input value={stop.contactPerson} onChange={(e) => updateStop(index, { contactPerson: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact phone</label>
+                      <Input value={stop.contactPhone} onChange={(e) => updateStop(index, { contactPhone: e.target.value })} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Purpose of visit</label>
+                    <Input value={stop.purpose} onChange={(e) => updateStop(index, { purpose: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Notes</label>
+                    <Textarea value={stop.notes} onChange={(e) => updateStop(index, { notes: e.target.value })} rows={2} />
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact phone</label>
-                  <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Purpose of visit</label>
-                <Input value={purpose} onChange={(e) => setPurpose(e.target.value)} />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Notes</label>
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-              </div>
+              ))}
+
+              <button type="button" onClick={addStop} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                <Plus className="h-4 w-4" /> Add another site
+              </button>
+
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">
                   Starting KM (odometer reading) — optional
                 </label>
                 <Input type="number" step="0.1" inputMode="decimal" value={kmStart} onChange={(e) => setKmStart(e.target.value)} placeholder="e.g. 24310" />
                 <p className="mt-1 text-xs text-ink-muted">
-                  Enter this to start the trip right away — or leave blank and hit "Start Trip" on the visit later. KM
-                  travelled is calculated automatically when you end the trip.
+                  One KM reading covers the whole trip, even with multiple sites. Enter this to start the trip right
+                  away — or leave blank and hit "Start Trip" later. KM travelled is calculated automatically when you
+                  end the trip.
                 </p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -168,16 +224,19 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-function TripControls({ visit }: { visit: SiteVisit }) {
+/** Start/End Trip controls that act on every stop in the trip group at once. */
+function TripControls({ trip }: { trip: SiteVisit[] }) {
   const queryClient = useQueryClient();
   const [kmInput, setKmInput] = useState("");
   const [editing, setEditing] = useState<"start" | "end" | null>(null);
+  const primary = trip[0];
+  const tripGroupId = primary.trip_group_id;
 
   const startTrip = useMutation({
     mutationFn: async (km: number) => {
       const { error } = await supabase.from("site_visits").update({
         trip_status: "in_progress", km_start: km, started_at: new Date().toISOString(),
-      }).eq("id", visit.id);
+      }).eq("trip_group_id", tripGroupId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -192,7 +251,7 @@ function TripControls({ visit }: { visit: SiteVisit }) {
     mutationFn: async (km: number) => {
       const { error } = await supabase.from("site_visits").update({
         trip_status: "completed", km_end: km, ended_at: new Date().toISOString(),
-      }).eq("id", visit.id);
+      }).eq("trip_group_id", tripGroupId);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -203,8 +262,8 @@ function TripControls({ visit }: { visit: SiteVisit }) {
     onError: () => toast.error("Couldn't end the trip"),
   });
 
-  if (visit.trip_status === "completed") {
-    const distance = visit.km_start != null && visit.km_end != null ? visit.km_end - visit.km_start : null;
+  if (primary.trip_status === "completed") {
+    const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
     return (
       <div className="flex items-center gap-1.5 text-xs text-success">
         <RouteIcon className="h-3.5 w-3.5" />
@@ -239,7 +298,7 @@ function TripControls({ visit }: { visit: SiteVisit }) {
     );
   }
 
-  if (visit.trip_status === "not_started") {
+  if (primary.trip_status === "not_started") {
     return (
       <Button size="sm" onClick={() => setEditing("start")} className="gap-1.5">
         <Play className="h-3.5 w-3.5" /> Start Trip
@@ -249,7 +308,7 @@ function TripControls({ visit }: { visit: SiteVisit }) {
 
   return (
     <div className="flex items-center gap-3">
-      {visit.km_start != null && <span className="text-xs text-ink-muted">Start KM: {visit.km_start}</span>}
+      {primary.km_start != null && <span className="text-xs text-ink-muted">Start KM: {primary.km_start}</span>}
       <Button size="sm" variant="destructive" onClick={() => setEditing("end")} className="gap-1.5">
         <Square className="h-3.5 w-3.5" /> End Trip
       </Button>
@@ -257,8 +316,25 @@ function TripControls({ visit }: { visit: SiteVisit }) {
   );
 }
 
-function VisitCard({ visit, ownerName, ownerAvatar, showOwner }: { visit: SiteVisit; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean }) {
-  const meta = TRIP_META[visit.trip_status] ?? TRIP_META.not_started;
+function SiteStopDetails({ visit }: { visit: SiteVisit }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-primary">{visit.site_name}</p>
+      <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {visit.location}</p>
+      {(visit.contact_person || visit.contact_phone) && (
+        <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
+          <UserIcon className="h-3 w-3" /> {visit.contact_person}{visit.contact_person && visit.contact_phone ? " · " : ""}
+          {visit.contact_phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{visit.contact_phone}</span>}
+        </p>
+      )}
+      {visit.purpose && <p className="mt-0.5 text-xs text-ink-muted">Purpose: {visit.purpose}</p>}
+    </div>
+  );
+}
+
+function TripCard({ trip, ownerName, ownerAvatar, showOwner }: { trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean }) {
+  const primary = trip[0];
+  const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
   return (
     <div className="rounded-lg border border-border p-4">
       <div className="flex items-start justify-between gap-3">
@@ -266,28 +342,40 @@ function VisitCard({ visit, ownerName, ownerAvatar, showOwner }: { visit: SiteVi
           {showOwner && <UserAvatar name={ownerName ?? "?"} avatarUrl={ownerAvatar} size="sm" />}
           <div>
             <div className="flex items-center gap-2">
-              <p className="font-medium text-ink-primary">{visit.site_name}</p>
+              <p className="font-medium text-ink-primary">
+                {trip.length > 1 ? `${trip.length} sites` : primary.site_name}
+              </p>
               <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", meta.bg, meta.text)}>{meta.label}</span>
             </div>
             {showOwner && ownerName && <p className="text-xs text-ink-muted">{ownerName}</p>}
-            <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {visit.location}</p>
-            {(visit.contact_person || visit.contact_phone) && (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
-                <UserIcon className="h-3 w-3" /> {visit.contact_person}{visit.contact_person && visit.contact_phone ? " · " : ""}
-                {visit.contact_phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{visit.contact_phone}</span>}
-              </p>
+
+            {trip.length > 1 ? (
+              <div className="mt-2 space-y-3 border-l border-border pl-3">
+                {trip.map((v) => <SiteStopDetails key={v.id} visit={v} />)}
+              </div>
+            ) : (
+              <>
+                <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {primary.location}</p>
+                {(primary.contact_person || primary.contact_phone) && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
+                    <UserIcon className="h-3 w-3" /> {primary.contact_person}{primary.contact_person && primary.contact_phone ? " · " : ""}
+                    {primary.contact_phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{primary.contact_phone}</span>}
+                  </p>
+                )}
+                {primary.purpose && <p className="mt-0.5 text-xs text-ink-muted">Purpose: {primary.purpose}</p>}
+              </>
             )}
-            {visit.purpose && <p className="mt-0.5 text-xs text-ink-muted">Purpose: {visit.purpose}</p>}
-            {(visit.started_at || visit.ended_at) && (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
+
+            {(primary.started_at || primary.ended_at) && (
+              <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
                 <Clock className="h-3 w-3" />
-                {visit.started_at && `Started ${format(new Date(visit.started_at), "h:mm a")}`}
-                {visit.ended_at && ` · Ended ${format(new Date(visit.ended_at), "h:mm a")}`}
+                {primary.started_at && `Started ${format(new Date(primary.started_at), "h:mm a")}`}
+                {primary.ended_at && ` · Ended ${format(new Date(primary.ended_at), "h:mm a")}`}
               </p>
             )}
           </div>
         </div>
-        {!showOwner && <TripControls visit={visit} />}
+        {!showOwner && <TripControls trip={trip} />}
       </div>
     </div>
   );
@@ -404,7 +492,7 @@ export default function SalesTrackerPage() {
   const { data: myVisits = [] } = useQuery({
     queryKey: ["sales-tracker", "my-visits", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("site_visits").select("*").eq("user_id", user!.id).order("created_at", { ascending: false }).limit(30);
+      const { data, error } = await supabase.from("site_visits").select("*").eq("user_id", user!.id).order("created_at", { ascending: false }).limit(60);
       if (error) throw error;
       return (data ?? []) as SiteVisit[];
     },
@@ -436,14 +524,17 @@ export default function SalesTrackerPage() {
     queryKey: ["sales-tracker", "team-visits", teamIds],
     queryFn: async () => {
       if (teamIds.length === 0) return [];
-      const { data, error } = await supabase.from("site_visits").select("*").in("user_id", teamIds).order("created_at", { ascending: false }).limit(50);
+      const { data, error } = await supabase.from("site_visits").select("*").in("user_id", teamIds).order("created_at", { ascending: false }).limit(100);
       if (error) throw error;
       return (data ?? []) as SiteVisit[];
     },
     enabled: isTeamHead && teamIds.length > 0,
   });
 
-  const activeTrips = teamVisits.filter((v) => v.trip_status === "in_progress").length;
+  const myTrips = useMemo(() => groupTrips(myVisits), [myVisits]);
+  const teamTrips = useMemo(() => groupTrips(teamVisits), [teamVisits]);
+
+  const activeTrips = teamTrips.filter((t) => t[0].trip_status === "in_progress").length;
   const onSiteToday = teamStatusToday.filter((s) => s.status === "site").length;
   const onLeaveToday = teamStatusToday.filter((s) => s.status === "leave").length;
   const reportedToday = teamStatusToday.length;
@@ -513,13 +604,13 @@ export default function SalesTrackerPage() {
       {isTeamHead && (
         <div className="rounded-card border border-border bg-card p-5">
           <h2 className="mb-4 font-heading text-lg font-semibold text-ink-primary">Team site visits</h2>
-          {teamVisits.length === 0 ? (
+          {teamTrips.length === 0 ? (
             <EmptyState icon={MapPin} title="No site visits yet" description="Site visits your team logs will show up here." />
           ) : (
             <div className="space-y-3">
-              {teamVisits.map((v) => {
-                const owner = peopleById[v.user_id];
-                return <VisitCard key={v.id} visit={v} ownerName={owner?.full_name} ownerAvatar={owner?.avatar_url} showOwner />;
+              {teamTrips.map((trip) => {
+                const owner = peopleById[trip[0].user_id];
+                return <TripCard key={trip[0].trip_group_id} trip={trip} ownerName={owner?.full_name} ownerAvatar={owner?.avatar_url} showOwner />;
               })}
             </div>
           )}
@@ -535,11 +626,11 @@ export default function SalesTrackerPage() {
             </span>
           )}
         </div>
-        {myVisits.length === 0 ? (
+        {myTrips.length === 0 ? (
           <EmptyState icon={MapPin} title="No site visits yet" description="Log a site visit to start tracking your trips and KM travelled." />
         ) : (
           <div className="space-y-3">
-            {myVisits.map((v) => <VisitCard key={v.id} visit={v} />)}
+            {myTrips.map((trip) => <TripCard key={trip[0].trip_group_id} trip={trip} />)}
           </div>
         )}
       </div>
