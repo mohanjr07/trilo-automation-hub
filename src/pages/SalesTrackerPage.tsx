@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
-  Phone, User as UserIcon, Clock, Route as RouteIcon, AlarmClock, Trash2,
+  Phone, User as UserIcon, Clock, Route as RouteIcon, AlarmClock, Trash2, Pencil,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -320,10 +320,16 @@ function SiteStopDetails({ visit }: { visit: SiteVisit }) {
 }
 
 function TripCard({
-  trip, ownerName, ownerAvatar, showOwner, onView,
-}: { trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean; onView: () => void }) {
+  trip, ownerName, ownerAvatar, showOwner, onView, onEdit,
+}: {
+  trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean;
+  onView: () => void; onEdit?: () => void;
+}) {
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
+  // Details can only be edited before the visit is ended — once "End Visit"
+  // is clicked (trip_status "completed") editing locks.
+  const canEdit = !showOwner && primary.trip_status !== "completed";
   return (
     <div
       onClick={onView}
@@ -371,12 +377,145 @@ function TripCard({
           </div>
         </div>
         {!showOwner && (
-          <div onClick={(e) => e.stopPropagation()}>
+          <div onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-start gap-2">
+            {canEdit && onEdit && (
+              <button
+                onClick={onEdit}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-ink-muted hover:bg-muted hover:text-ink-primary"
+                title="Edit visit details"
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </button>
+            )}
             <TripControls trip={trip} />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Lets the owner edit a trip's site details (name, location, contact,
+ * purpose, notes) while it hasn't been ended yet. Locked out entirely once
+ * "End Visit" is clicked — the trigger component only renders this when
+ * trip_status !== "completed".
+ */
+function EditVisitModal({ trip, onClose }: { trip: SiteVisit[] | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [sites, setSites] = useState<SiteStop[]>([]);
+
+  useEffect(() => {
+    if (trip) {
+      setSites(trip.map((v) => ({
+        siteName: v.site_name,
+        location: v.location,
+        contactPerson: v.contact_person ?? "",
+        contactPhone: v.contact_phone ?? "",
+        purpose: v.purpose ?? "",
+        notes: v.notes ?? "",
+      })));
+    }
+  }, [trip]);
+
+  const updateStop = (index: number, patch: Partial<SiteStop>) => {
+    setSites((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  };
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!trip) return;
+      const updates = trip.map((v, i) => {
+        const s = sites[i];
+        return supabase.from("site_visits").update({
+          site_name: s.siteName.trim(),
+          location: s.location.trim(),
+          contact_person: s.contactPerson.trim() || null,
+          contact_phone: s.contactPhone.trim() || null,
+          purpose: s.purpose.trim() || null,
+          notes: s.notes.trim() || null,
+        }).eq("id", v.id);
+      });
+      const results = await Promise.all(updates);
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
+      toast.success("Visit details updated");
+      onClose();
+    },
+    onError: () => toast.error("Couldn't update the visit"),
+  });
+
+  if (!trip) return null;
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
+        >
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="font-heading text-xl font-bold text-ink-primary">Edit Visit</h2>
+            <button onClick={onClose} className="text-ink-muted hover:text-ink-primary"><X className="h-5 w-5" /></button>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const incomplete = sites.some((s) => !s.siteName.trim() || !s.location.trim());
+              if (incomplete) {
+                toast.error("Site name and location are required for every site");
+                return;
+              }
+              save.mutate();
+            }}
+            className="space-y-5"
+          >
+            {sites.map((stop, index) => (
+              <div key={index} className="rounded-lg border border-border p-4 space-y-3">
+                {sites.length > 1 && <p className="text-sm font-semibold text-ink-primary">Site {index + 1}</p>}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Site / Client name *</label>
+                  <Input value={stop.siteName} onChange={(e) => updateStop(index, { siteName: e.target.value })} autoFocus={index === 0} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Location / Address *</label>
+                  <Input value={stop.location} onChange={(e) => updateStop(index, { location: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact person</label>
+                    <Input value={stop.contactPerson} onChange={(e) => updateStop(index, { contactPerson: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact phone</label>
+                    <Input value={stop.contactPhone} onChange={(e) => updateStop(index, { contactPhone: e.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Purpose of visit</label>
+                  <Input value={stop.purpose} onChange={(e) => updateStop(index, { purpose: e.target.value })} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Notes</label>
+                  <Textarea value={stop.notes} onChange={(e) => updateStop(index, { notes: e.target.value })} rows={2} />
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+              <Button type="submit" disabled={save.isPending}>{save.isPending ? "Saving..." : "Save changes"}</Button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
+    </AnimatePresence>
   );
 }
 
@@ -536,6 +675,7 @@ export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
   const [newVisitOpen, setNewVisitOpen] = useState(false);
   const [viewTrip, setViewTrip] = useState<{ trip: SiteVisit[]; ownerName?: string } | null>(null);
+  const [editTrip, setEditTrip] = useState<SiteVisit[] | null>(null);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
   const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
@@ -721,7 +861,12 @@ export default function SalesTrackerPage() {
         ) : (
           <div className="space-y-3">
             {myTrips.map((trip) => (
-              <TripCard key={trip[0].trip_group_id} trip={trip} onView={() => setViewTrip({ trip })} />
+              <TripCard
+                key={trip[0].trip_group_id}
+                trip={trip}
+                onView={() => setViewTrip({ trip })}
+                onEdit={() => setEditTrip(trip)}
+              />
             ))}
           </div>
         )}
@@ -729,6 +874,7 @@ export default function SalesTrackerPage() {
 
       <NewVisitModal open={newVisitOpen} onClose={() => setNewVisitOpen(false)} />
       <TripDetailModal trip={viewTrip?.trip ?? null} ownerName={viewTrip?.ownerName} onClose={() => setViewTrip(null)} />
+      <EditVisitModal trip={editTrip} onClose={() => setEditTrip(null)} />
     </AnimatedPage>
   );
 }
