@@ -109,7 +109,13 @@ export default function AppLayout() {
   const isAdmin = profile?.role === "admin";
   const isManager = profile?.role === "manager";
   const isIntern = profile?.role === "intern";
-  const nav = isSuperAdmin ? superAdminNav : isAdmin ? adminNav : isManager ? managerNav : isIntern ? internNav : employeeNav;
+  const baseNav = isSuperAdmin ? superAdminNav : isAdmin ? adminNav : isManager ? managerNav : isIntern ? internNav : employeeNav;
+  // Sales Tracker is only useful to people the admin has put in the "Sales"
+  // department, plus team heads (admin/super_admin/manager) who need it to
+  // see their team's status and site visits.
+  const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
+  const canSeeSalesTracker = isSuperAdmin || isAdmin || isManager || isSalesDept;
+  const nav = canSeeSalesTracker ? baseNav : baseNav.filter((item) => item.path !== "/sales-tracker");
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
