@@ -43,6 +43,29 @@ export default function DailyStatusModal() {
   // check-in prompt — everyone else's login is unaffected.
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
 
+  // Admin-configurable time of day the popup starts appearing (Settings →
+  // Sales Tracker). Defaults to 09:30 if nothing has been configured yet.
+  const { data: settings } = useQuery({
+    queryKey: ["sales-tracker-settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("sales_tracker_settings").select("checkin_time").eq("id", "default").maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: isSalesDept,
+    staleTime: 5 * 60 * 1000,
+  });
+  const checkinTime = settings?.checkin_time ?? "09:30:00";
+
+  // Re-checked every minute so the popup appears on its own once the
+  // configured time arrives, without needing a page refresh.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+  const isPastCheckinTime = format(now, "HH:mm:ss") >= checkinTime;
+
   const { data: existingStatus, isLoading } = useQuery({
     queryKey: ["daily-status-today", user?.id],
     queryFn: async () => {
@@ -72,7 +95,7 @@ export default function DailyStatusModal() {
     }
   }, [existingStatus]);
 
-  const open = isSalesDept && !isLoading && !!user && !!profile && !existingStatus && !dismissed;
+  const open = isSalesDept && isPastCheckinTime && !isLoading && !!user && !!profile && !existingStatus && !dismissed;
 
   const submitStatus = useMutation({
     mutationFn: async (status: Status) => {
