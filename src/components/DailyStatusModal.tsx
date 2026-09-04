@@ -42,7 +42,6 @@ export default function DailyStatusModal() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<"pick" | "site-details">("pick");
   const [sites, setSites] = useState<SiteStop[]>([emptyStop()]);
-  const [kmStart, setKmStart] = useState("");
   const [dismissed, setDismissed] = useState(false);
 
   // Only people the admin has put in the "Sales" department get the daily
@@ -92,7 +91,6 @@ export default function DailyStatusModal() {
     if (existingStatus) {
       setStep("pick");
       setSites([emptyStop()]);
-      setKmStart("");
     }
   }, [existingStatus]);
 
@@ -127,8 +125,11 @@ export default function DailyStatusModal() {
     onError: () => toast.error("Couldn't save your status. Please try again."),
   });
 
+  // Saves the visit details only. The trip itself only starts once the user
+  // clicks "Start Visit" on the Sales Tracker page and enters the starting KM
+  // there, and ends the same way with "End Visit".
   const submitSiteVisit = useMutation({
-    mutationFn: async (km: number) => {
+    mutationFn: async () => {
       const dailyStatusId = submitStatus.data?.id ?? existingStatus?.id;
       const tripGroupId = crypto.randomUUID();
       const rows = sites.map((s, i) => ({
@@ -143,11 +144,6 @@ export default function DailyStatusModal() {
         contact_phone: s.contactPhone.trim() || null,
         purpose: s.purpose.trim() || null,
         notes: s.notes.trim() || null,
-        // The trip starts right away — the whole trip (all stops) shares the
-        // same start/end KM and timestamps.
-        trip_status: "in_progress",
-        km_start: km,
-        started_at: new Date().toISOString(),
       }));
       const { error } = await supabase.from("site_visits").insert(rows);
       if (error) throw error;
@@ -155,7 +151,7 @@ export default function DailyStatusModal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
       queryClient.invalidateQueries({ queryKey: ["my-site-visits"] });
-      toast.success("Trip started — your manager has been notified");
+      toast.success("Site visit saved — your manager has been notified. Click \"Start Visit\" on the Sales Tracker page when you head out.");
       setDismissed(true);
     },
     onError: () => toast.error("Couldn't save the site visit. Please try again."),
@@ -220,12 +216,7 @@ export default function DailyStatusModal() {
                     toast.error("Site name and location are required for every site");
                     return;
                   }
-                  const km = parseFloat(kmStart);
-                  if (!kmStart.trim() || isNaN(km) || km < 0) {
-                    toast.error("Starting KM is required");
-                    return;
-                  }
-                  submitSiteVisit.mutate(km);
+                  submitSiteVisit.mutate();
                 }}
                 className="mt-5 space-y-5"
               >
@@ -294,24 +285,10 @@ export default function DailyStatusModal() {
                   <Plus className="h-4 w-4" /> Add another site
                 </button>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">
-                    Starting KM (odometer reading) *
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    inputMode="decimal"
-                    required
-                    value={kmStart}
-                    onChange={(e) => setKmStart(e.target.value)}
-                    placeholder="e.g. 24310"
-                  />
-                  <p className="mt-1 text-xs text-ink-muted">
-                    One KM reading covers the whole trip, even with multiple sites. Your trip starts as soon as you
-                    save — KM travelled is calculated automatically when you end it from the Sales Tracker page.
-                  </p>
-                </div>
+                <p className="text-xs text-ink-muted">
+                  Save the details now — you'll enter the starting KM and click "Start Visit" on the Sales Tracker
+                  page once you actually head out, and "End Visit" with the ending KM once you're back.
+                </p>
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="submit" disabled={submitSiteVisit.isPending}>
