@@ -36,7 +36,12 @@ export default function DailyStatusModal() {
   const [contactPhone, setContactPhone] = useState("");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
+  const [kmStart, setKmStart] = useState("");
   const [dismissed, setDismissed] = useState(false);
+
+  // Only people the admin has put in the "Sales" department get the daily
+  // check-in prompt — everyone else's login is unaffected.
+  const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
 
   const { data: existingStatus, isLoading } = useQuery({
     queryKey: ["daily-status-today", user?.id],
@@ -50,7 +55,7 @@ export default function DailyStatusModal() {
       if (error) throw error;
       return data;
     },
-    enabled: !!user,
+    enabled: !!user && isSalesDept,
   });
 
   useEffect(() => {
@@ -63,10 +68,11 @@ export default function DailyStatusModal() {
       setContactPhone("");
       setPurpose("");
       setNotes("");
+      setKmStart("");
     }
   }, [existingStatus]);
 
-  const open = !isLoading && !!user && !!profile && !existingStatus && !dismissed;
+  const open = isSalesDept && !isLoading && !!user && !!profile && !existingStatus && !dismissed;
 
   const submitStatus = useMutation({
     mutationFn: async (status: Status) => {
@@ -94,6 +100,8 @@ export default function DailyStatusModal() {
   const submitSiteVisit = useMutation({
     mutationFn: async () => {
       const dailyStatusId = submitStatus.data?.id ?? existingStatus?.id;
+      const km = kmStart.trim() ? parseFloat(kmStart) : null;
+      const startingTrip = km != null && !isNaN(km);
       const { error } = await supabase.from("site_visits").insert({
         user_id: user!.id,
         daily_status_id: dailyStatusId,
@@ -104,13 +112,23 @@ export default function DailyStatusModal() {
         contact_phone: contactPhone.trim() || null,
         purpose: purpose.trim() || null,
         notes: notes.trim() || null,
+        // If the KM reading is entered right away, start the trip immediately
+        // instead of leaving it "not started" — one less step for the user.
+        ...(startingTrip
+          ? { trip_status: "in_progress", km_start: km, started_at: new Date().toISOString() }
+          : {}),
       });
       if (error) throw error;
+      return { startingTrip };
     },
-    onSuccess: () => {
+    onSuccess: ({ startingTrip }) => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
       queryClient.invalidateQueries({ queryKey: ["my-site-visits"] });
-      toast.success("Site visit logged — your manager has been notified");
+      toast.success(
+        startingTrip
+          ? "Trip started — your manager has been notified"
+          : "Site visit logged — your manager has been notified"
+      );
       setDismissed(true);
     },
     onError: () => toast.error("Couldn't save the site visit. Please try again."),
@@ -203,6 +221,23 @@ export default function DailyStatusModal() {
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-ink-primary">Notes</label>
                   <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">
+                    Starting KM (odometer reading) — optional
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    inputMode="decimal"
+                    value={kmStart}
+                    onChange={(e) => setKmStart(e.target.value)}
+                    placeholder="e.g. 24310"
+                  />
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Enter this now to start your trip right away, or leave it blank and start the trip later from
+                    the Sales Tracker page. Once you end the trip there, KM travelled is calculated automatically.
+                  </p>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
