@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, isToday } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
-  Phone, User as UserIcon, Clock, Route as RouteIcon,
+  Phone, User as UserIcon, Clock, Route as RouteIcon, AlarmClock,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -293,11 +293,83 @@ function VisitCard({ visit, ownerName, ownerAvatar, showOwner }: { visit: SiteVi
   );
 }
 
+function CheckinTimeSettings() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { data: settings } = useQuery({
+    queryKey: ["sales-tracker-settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("sales_tracker_settings").select("*").eq("id", "default").maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // checkin_time comes back as "HH:MM:SS" — <input type="time"> wants "HH:MM".
+  const [time, setTime] = useState("09:30");
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (settings?.checkin_time && !touched) setTime(settings.checkin_time.slice(0, 5));
+  }, [settings?.checkin_time, touched]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("sales_tracker_settings")
+        .update({ checkin_time: `${time}:00`, updated_by: user!.id, updated_at: new Date().toISOString() })
+        .eq("id", "default");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sales-tracker-settings"] });
+      setTouched(false);
+      toast.success("Check-in time updated");
+    },
+    onError: () => toast.error("Couldn't save the check-in time"),
+  });
+
+  return (
+    <div className="rounded-card border border-border bg-card p-5">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <AlarmClock className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="font-heading text-lg font-semibold text-ink-primary">Daily check-in popup time</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">
+            Choose what time the In Office / On Site / Leave popup starts appearing for Sales-department staff.
+            It stays hidden before this time and shows up automatically once it arrives — no page refresh needed.
+          </p>
+          <div className="mt-4 flex items-end gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-ink-primary">Check-in time</label>
+              <Input
+                type="time"
+                value={time}
+                onChange={(e) => { setTime(e.target.value); setTouched(true); }}
+                className="w-40 h-10"
+              />
+            </div>
+            <Button onClick={() => save.mutate()} disabled={save.isPending || !time}>
+              {save.isPending ? "Saving..." : "Save"}
+            </Button>
+            {settings?.checkin_time && !touched && (
+              <span className="pb-2.5 text-xs text-ink-muted">Currently {settings.checkin_time.slice(0, 5)}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
   const [newVisitOpen, setNewVisitOpen] = useState(false);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
+  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
 
   if (profile && !isTeamHead && !isSalesDept) {
     return (
@@ -392,6 +464,8 @@ export default function SalesTrackerPage() {
           <Plus className="h-4 w-4" /> New Site Visit
         </Button>
       </div>
+
+      {isAdmin && <CheckinTimeSettings />}
 
       {isTeamHead && (
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-4 md:grid-cols-4">
