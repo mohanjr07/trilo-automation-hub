@@ -35,6 +35,7 @@ import OrganisationFlowPage from "@/pages/OrganisationFlowPage";
 import AssetsPage from "@/pages/AssetsPage";
 import KraKpiPage from "@/pages/KraKpiPage";
 import DocumentsPage from "@/pages/DocumentsPage";
+import SalesTrackerPage from "@/pages/SalesTrackerPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -97,6 +98,10 @@ const App = () => (
               <Route path="/assets" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
               <Route path="/kra-kpi" element={<KraKpiPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
+              {/* Sales Tracker — visible to every signed-in role. Team heads
+                  (admin/super_admin/manager) additionally see their team's
+                  live status & site visits; RLS enforces the same scoping. */}
+              <Route path="/sales-tracker" element={<SalesTrackerPage />} />
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
 
