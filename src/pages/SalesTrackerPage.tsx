@@ -58,13 +58,16 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [contactPhone, setContactPhone] = useState("");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
+  const [kmStart, setKmStart] = useState("");
 
   const reset = () => {
-    setSiteName(""); setLocation(""); setContactPerson(""); setContactPhone(""); setPurpose(""); setNotes("");
+    setSiteName(""); setLocation(""); setContactPerson(""); setContactPhone(""); setPurpose(""); setNotes(""); setKmStart("");
   };
 
   const create = useMutation({
     mutationFn: async () => {
+      const km = kmStart.trim() ? parseFloat(kmStart) : null;
+      const startingTrip = km != null && !isNaN(km);
       const { error } = await supabase.from("site_visits").insert({
         user_id: user!.id,
         visit_date: today(),
@@ -74,12 +77,16 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
         contact_phone: contactPhone.trim() || null,
         purpose: purpose.trim() || null,
         notes: notes.trim() || null,
+        ...(startingTrip
+          ? { trip_status: "in_progress", km_start: km, started_at: new Date().toISOString() }
+          : {}),
       });
       if (error) throw error;
+      return { startingTrip };
     },
-    onSuccess: () => {
+    onSuccess: ({ startingTrip }) => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Site visit logged — your manager has been notified");
+      toast.success(startingTrip ? "Trip started — your manager has been notified" : "Site visit logged — your manager has been notified");
       reset();
       onClose();
     },
@@ -138,6 +145,16 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Notes</label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-primary">
+                  Starting KM (odometer reading) — optional
+                </label>
+                <Input type="number" step="0.1" inputMode="decimal" value={kmStart} onChange={(e) => setKmStart(e.target.value)} placeholder="e.g. 24310" />
+                <p className="mt-1 text-xs text-ink-muted">
+                  Enter this to start the trip right away — or leave blank and hit "Start Trip" on the visit later. KM
+                  travelled is calculated automatically when you end the trip.
+                </p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
@@ -280,6 +297,19 @@ export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
   const [newVisitOpen, setNewVisitOpen] = useState(false);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
+  const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
+
+  if (profile && !isTeamHead && !isSalesDept) {
+    return (
+      <AnimatedPage>
+        <EmptyState
+          icon={RouteIcon}
+          title="Sales Tracker isn't enabled for you"
+          description='Ask your admin to set your department to "Sales" in Users to log site visits and trips here.'
+        />
+      </AnimatedPage>
+    );
+  }
 
   const { data: people = [] } = useQuery({
     queryKey: ["sales-tracker-people"],
