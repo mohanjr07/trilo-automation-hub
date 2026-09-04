@@ -93,9 +93,7 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
   const removeStop = (index: number) => setSites((prev) => prev.filter((_, i) => i !== index));
 
   const create = useMutation({
-    mutationFn: async () => {
-      const km = kmStart.trim() ? parseFloat(kmStart) : null;
-      const startingTrip = km != null && !isNaN(km);
+    mutationFn: async (km: number) => {
       const tripGroupId = crypto.randomUUID();
       const rows = sites.map((s, i) => ({
         user_id: user!.id,
@@ -108,17 +106,16 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
         contact_phone: s.contactPhone.trim() || null,
         purpose: s.purpose.trim() || null,
         notes: s.notes.trim() || null,
-        ...(startingTrip
-          ? { trip_status: "in_progress", km_start: km, started_at: new Date().toISOString() }
-          : {}),
+        trip_status: "in_progress",
+        km_start: km,
+        started_at: new Date().toISOString(),
       }));
       const { error } = await supabase.from("site_visits").insert(rows);
       if (error) throw error;
-      return { startingTrip };
     },
-    onSuccess: ({ startingTrip }) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success(startingTrip ? "Trip started — your manager has been notified" : "Site visit(s) logged — your manager has been notified");
+      toast.success("Trip started — your manager has been notified");
       reset();
       onClose();
     },
@@ -149,7 +146,12 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
                   toast.error("Site name and location are required for every site");
                   return;
                 }
-                create.mutate();
+                const km = parseFloat(kmStart);
+                if (!kmStart.trim() || isNaN(km) || km < 0) {
+                  toast.error("Starting KM is required");
+                  return;
+                }
+                create.mutate(km);
               }}
               className="space-y-5"
             >
@@ -203,13 +205,12 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">
-                  Starting KM (odometer reading) — optional
+                  Starting KM (odometer reading) *
                 </label>
-                <Input type="number" step="0.1" inputMode="decimal" value={kmStart} onChange={(e) => setKmStart(e.target.value)} placeholder="e.g. 24310" />
+                <Input type="number" step="0.1" inputMode="decimal" required value={kmStart} onChange={(e) => setKmStart(e.target.value)} placeholder="e.g. 24310" />
                 <p className="mt-1 text-xs text-ink-muted">
-                  One KM reading covers the whole trip, even with multiple sites. Enter this to start the trip right
-                  away — or leave blank and hit "Start Trip" later. KM travelled is calculated automatically when you
-                  end the trip.
+                  One KM reading covers the whole trip, even with multiple sites. The trip starts as soon as you
+                  save — KM travelled is calculated automatically when you end it.
                 </p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -332,11 +333,19 @@ function SiteStopDetails({ visit }: { visit: SiteVisit }) {
   );
 }
 
-function TripCard({ trip, ownerName, ownerAvatar, showOwner }: { trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean }) {
+function TripCard({
+  trip, ownerName, ownerAvatar, showOwner, onView,
+}: { trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean; onView: () => void }) {
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div
+      onClick={onView}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onView(); }}
+      className="cursor-pointer rounded-lg border border-border p-4 transition hover:border-primary/40 hover:bg-primary/5"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {showOwner && <UserAvatar name={ownerName ?? "?"} avatarUrl={ownerAvatar} size="sm" />}
@@ -375,9 +384,94 @@ function TripCard({ trip, ownerName, ownerAvatar, showOwner }: { trip: SiteVisit
             )}
           </div>
         </div>
-        {!showOwner && <TripControls trip={trip} />}
+        {!showOwner && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <TripControls trip={trip} />
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Full read-only detail view for a trip, opened by clicking its card. */
+function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | null; ownerName?: string; onClose: () => void }) {
+  if (!trip) return null;
+  const primary = trip[0];
+  const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
+  const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
+        >
+          <div className="flex items-start justify-between mb-5">
+            <div>
+              <h2 className="font-heading text-xl font-bold text-ink-primary">
+                {trip.length > 1 ? `Trip · ${trip.length} sites` : primary.site_name}
+              </h2>
+              {ownerName && <p className="text-sm text-ink-muted">{ownerName}</p>}
+              <p className="text-xs text-ink-muted">{format(new Date(primary.visit_date), "EEEE, MMM d, yyyy")}</p>
+            </div>
+            <button onClick={onClose} className="text-ink-muted hover:text-ink-primary shrink-0"><X className="h-5 w-5" /></button>
+          </div>
+
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <span className={cn("rounded-full px-3 py-1 text-xs font-medium", meta.bg, meta.text)}>{meta.label}</span>
+            {primary.km_start != null && (
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-ink-secondary">Start KM: {primary.km_start}</span>
+            )}
+            {primary.km_end != null && (
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-ink-secondary">End KM: {primary.km_end}</span>
+            )}
+            {distance != null && (
+              <span className="flex items-center gap-1 rounded-full bg-success-light px-3 py-1 text-xs font-medium text-success">
+                <RouteIcon className="h-3.5 w-3.5" /> {distance} km travelled
+              </span>
+            )}
+            {primary.started_at && (
+              <span className="flex items-center gap-1 text-xs text-ink-muted">
+                <Clock className="h-3 w-3" /> Started {format(new Date(primary.started_at), "h:mm a")}
+              </span>
+            )}
+            {primary.ended_at && (
+              <span className="flex items-center gap-1 text-xs text-ink-muted">
+                <Clock className="h-3 w-3" /> Ended {format(new Date(primary.ended_at), "h:mm a")}
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {trip.map((visit, index) => (
+              <div key={visit.id} className="rounded-lg border border-border p-4">
+                {trip.length > 1 && <p className="mb-1 text-xs font-semibold text-ink-muted">Site {index + 1}</p>}
+                <p className="text-sm font-medium text-ink-primary">{visit.site_name}</p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {visit.location}</p>
+                {(visit.contact_person || visit.contact_phone) && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
+                    <UserIcon className="h-3 w-3" /> {visit.contact_person}{visit.contact_person && visit.contact_phone ? " · " : ""}
+                    {visit.contact_phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{visit.contact_phone}</span>}
+                  </p>
+                )}
+                {visit.purpose && <p className="mt-0.5 text-xs text-ink-muted">Purpose: {visit.purpose}</p>}
+                {visit.notes && <p className="mt-0.5 text-xs text-ink-muted">Notes: {visit.notes}</p>}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <Button variant="outline" onClick={onClose}>Close</Button>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
   );
 }
 
@@ -455,6 +549,7 @@ function CheckinTimeSettings() {
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
   const [newVisitOpen, setNewVisitOpen] = useState(false);
+  const [viewTrip, setViewTrip] = useState<{ trip: SiteVisit[]; ownerName?: string } | null>(null);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
   const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
@@ -610,7 +705,16 @@ export default function SalesTrackerPage() {
             <div className="space-y-3">
               {teamTrips.map((trip) => {
                 const owner = peopleById[trip[0].user_id];
-                return <TripCard key={trip[0].trip_group_id} trip={trip} ownerName={owner?.full_name} ownerAvatar={owner?.avatar_url} showOwner />;
+                return (
+                  <TripCard
+                    key={trip[0].trip_group_id}
+                    trip={trip}
+                    ownerName={owner?.full_name}
+                    ownerAvatar={owner?.avatar_url}
+                    showOwner
+                    onView={() => setViewTrip({ trip, ownerName: owner?.full_name })}
+                  />
+                );
               })}
             </div>
           )}
@@ -630,12 +734,15 @@ export default function SalesTrackerPage() {
           <EmptyState icon={MapPin} title="No site visits yet" description="Log a site visit to start tracking your trips and KM travelled." />
         ) : (
           <div className="space-y-3">
-            {myTrips.map((trip) => <TripCard key={trip[0].trip_group_id} trip={trip} />)}
+            {myTrips.map((trip) => (
+              <TripCard key={trip[0].trip_group_id} trip={trip} onView={() => setViewTrip({ trip })} />
+            ))}
           </div>
         )}
       </div>
 
       <NewVisitModal open={newVisitOpen} onClose={() => setNewVisitOpen(false)} />
+      <TripDetailModal trip={viewTrip?.trip ?? null} ownerName={viewTrip?.ownerName} onClose={() => setViewTrip(null)} />
     </AnimatedPage>
   );
 }
