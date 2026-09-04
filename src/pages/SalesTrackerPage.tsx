@@ -29,8 +29,8 @@ const STATUS_META: Record<string, { label: string; icon: typeof Building2; dot: 
 
 const TRIP_META: Record<string, { label: string; bg: string; text: string }> = {
   not_started: { label: "Not started", bg: "bg-muted", text: "text-ink-secondary" },
-  in_progress: { label: "Trip in progress", bg: "bg-warning-light", text: "text-warning" },
-  completed: { label: "Trip completed", bg: "bg-success-light", text: "text-success" },
+  in_progress: { label: "Visit in progress", bg: "bg-warning-light", text: "text-warning" },
+  completed: { label: "Visit completed", bg: "bg-success-light", text: "text-success" },
 };
 
 type Profile = {
@@ -79,11 +79,9 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [sites, setSites] = useState<SiteStop[]>([emptyStop()]);
-  const [kmStart, setKmStart] = useState("");
 
   const reset = () => {
     setSites([emptyStop()]);
-    setKmStart("");
   };
 
   const updateStop = (index: number, patch: Partial<SiteStop>) => {
@@ -92,8 +90,10 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
   const addStop = () => setSites((prev) => [...prev, emptyStop()]);
   const removeStop = (index: number) => setSites((prev) => prev.filter((_, i) => i !== index));
 
+  // Saves the visit details only. The trip itself only starts once the user
+  // clicks "Start Visit" on the card and enters the starting KM there.
   const create = useMutation({
-    mutationFn: async (km: number) => {
+    mutationFn: async () => {
       const tripGroupId = crypto.randomUUID();
       const rows = sites.map((s, i) => ({
         user_id: user!.id,
@@ -106,16 +106,13 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
         contact_phone: s.contactPhone.trim() || null,
         purpose: s.purpose.trim() || null,
         notes: s.notes.trim() || null,
-        trip_status: "in_progress",
-        km_start: km,
-        started_at: new Date().toISOString(),
       }));
       const { error } = await supabase.from("site_visits").insert(rows);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Trip started — your manager has been notified");
+      toast.success("Site visit saved — your manager has been notified. Click \"Start Visit\" when you head out.");
       reset();
       onClose();
     },
@@ -146,12 +143,7 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
                   toast.error("Site name and location are required for every site");
                   return;
                 }
-                const km = parseFloat(kmStart);
-                if (!kmStart.trim() || isNaN(km) || km < 0) {
-                  toast.error("Starting KM is required");
-                  return;
-                }
-                create.mutate(km);
+                create.mutate();
               }}
               className="space-y-5"
             >
@@ -203,16 +195,10 @@ function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }
                 <Plus className="h-4 w-4" /> Add another site
               </button>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">
-                  Starting KM (odometer reading) *
-                </label>
-                <Input type="number" step="0.1" inputMode="decimal" required value={kmStart} onChange={(e) => setKmStart(e.target.value)} placeholder="e.g. 24310" />
-                <p className="mt-1 text-xs text-ink-muted">
-                  One KM reading covers the whole trip, even with multiple sites. The trip starts as soon as you
-                  save — KM travelled is calculated automatically when you end it.
-                </p>
-              </div>
+              <p className="text-xs text-ink-muted">
+                Save the visit details now — you'll enter the starting KM and click "Start Visit" on the card
+                when you actually head out, and "End Visit" with the ending KM once you're back.
+              </p>
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
                 <Button type="submit" disabled={create.isPending}>{create.isPending ? "Saving..." : "Save visit"}</Button>
@@ -242,10 +228,10 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Trip started — your manager has been notified");
+      toast.success("Visit started — your manager has been notified");
       setEditing(null); setKmInput("");
     },
-    onError: () => toast.error("Couldn't start the trip"),
+    onError: () => toast.error("Couldn't start the visit"),
   });
 
   const endTrip = useMutation({
@@ -257,10 +243,10 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Trip ended — your manager has been notified");
+      toast.success("Visit ended — your manager has been notified");
       setEditing(null); setKmInput("");
     },
-    onError: () => toast.error("Couldn't end the trip"),
+    onError: () => toast.error("Couldn't end the visit"),
   });
 
   if (primary.trip_status === "completed") {
@@ -302,7 +288,7 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
   if (primary.trip_status === "not_started") {
     return (
       <Button size="sm" onClick={() => setEditing("start")} className="gap-1.5">
-        <Play className="h-3.5 w-3.5" /> Start Trip
+        <Play className="h-3.5 w-3.5" /> Start Visit
       </Button>
     );
   }
@@ -311,7 +297,7 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
     <div className="flex items-center gap-3">
       {primary.km_start != null && <span className="text-xs text-ink-muted">Start KM: {primary.km_start}</span>}
       <Button size="sm" variant="destructive" onClick={() => setEditing("end")} className="gap-1.5">
-        <Square className="h-3.5 w-3.5" /> End Trip
+        <Square className="h-3.5 w-3.5" /> End Visit
       </Button>
     </div>
   );
