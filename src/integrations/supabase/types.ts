@@ -539,6 +539,60 @@ export type Database = {
           },
         ]
       }
+      project_photos: {
+        Row: {
+          address: string | null
+          captured_at: string
+          created_at: string | null
+          id: string
+          image_url: string
+          latitude: number | null
+          longitude: number | null
+          note: string | null
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          captured_at?: string
+          created_at?: string | null
+          id?: string
+          image_url: string
+          latitude?: number | null
+          longitude?: number | null
+          note?: string | null
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          captured_at?: string
+          created_at?: string | null
+          id?: string
+          image_url?: string
+          latitude?: number | null
+          longitude?: number | null
+          note?: string | null
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_photos_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_photos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_members: {
         Row: {
           created_at: string | null
