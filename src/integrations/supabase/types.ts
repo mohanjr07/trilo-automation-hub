@@ -676,6 +676,8 @@ export type Database = {
           purpose: string | null
           site_name: string
           started_at: string | null
+          stop_order: number
+          trip_group_id: string
           trip_status: string
           updated_at: string | null
           user_id: string
@@ -695,6 +697,8 @@ export type Database = {
           purpose?: string | null
           site_name: string
           started_at?: string | null
+          stop_order?: number
+          trip_group_id?: string
           trip_status?: string
           updated_at?: string | null
           user_id: string
@@ -714,6 +718,8 @@ export type Database = {
           purpose?: string | null
           site_name?: string
           started_at?: string | null
+          stop_order?: number
+          trip_group_id?: string
           trip_status?: string
           updated_at?: string | null
           user_id?: string
