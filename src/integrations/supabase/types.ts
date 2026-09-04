@@ -64,6 +64,41 @@ export type Database = {
           },
         ]
       }
+      daily_status: {
+        Row: {
+          created_at: string | null
+          id: string
+          note: string | null
+          status: string
+          status_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          status: string
+          status_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          status?: string
+          status_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_status_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holidays: {
         Row: {
           color: string | null
@@ -626,6 +661,81 @@ export type Database = {
           },
         ]
       }
+      site_visits: {
+        Row: {
+          contact_person: string | null
+          contact_phone: string | null
+          created_at: string | null
+          daily_status_id: string | null
+          ended_at: string | null
+          id: string
+          km_end: number | null
+          km_start: number | null
+          location: string
+          notes: string | null
+          purpose: string | null
+          site_name: string
+          started_at: string | null
+          trip_status: string
+          updated_at: string | null
+          user_id: string
+          visit_date: string
+        }
+        Insert: {
+          contact_person?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          daily_status_id?: string | null
+          ended_at?: string | null
+          id?: string
+          km_end?: number | null
+          km_start?: number | null
+          location: string
+          notes?: string | null
+          purpose?: string | null
+          site_name: string
+          started_at?: string | null
+          trip_status?: string
+          updated_at?: string | null
+          user_id: string
+          visit_date?: string
+        }
+        Update: {
+          contact_person?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          daily_status_id?: string | null
+          ended_at?: string | null
+          id?: string
+          km_end?: number | null
+          km_start?: number | null
+          location?: string
+          notes?: string | null
+          purpose?: string | null
+          site_name?: string
+          started_at?: string | null
+          trip_status?: string
+          updated_at?: string | null
+          user_id?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_visits_daily_status_id_fkey"
+            columns: ["daily_status_id"]
+            isOneToOne: false
+            referencedRelation: "daily_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_visits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_assignees: {
         Row: {
           assignee_role: string | null
@@ -1090,6 +1200,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_sales_tracker_of: {
+        Args: { target: string; uid: string }
+        Returns: boolean
+      }
       add_app_user: {
         Args: {
           p_department?: string
