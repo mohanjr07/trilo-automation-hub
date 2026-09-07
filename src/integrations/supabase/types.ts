@@ -99,6 +99,41 @@ export type Database = {
           },
         ]
       }
+      device_push_tokens: {
+        Row: {
+          created_at: string | null
+          id: string
+          platform: string
+          token: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          platform?: string
+          token: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          platform?: string
+          token?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_push_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holidays: {
         Row: {
           color: string | null
@@ -539,60 +574,6 @@ export type Database = {
           },
         ]
       }
-      project_photos: {
-        Row: {
-          address: string | null
-          captured_at: string
-          created_at: string | null
-          id: string
-          image_url: string
-          latitude: number | null
-          longitude: number | null
-          note: string | null
-          project_id: string
-          user_id: string
-        }
-        Insert: {
-          address?: string | null
-          captured_at?: string
-          created_at?: string | null
-          id?: string
-          image_url: string
-          latitude?: number | null
-          longitude?: number | null
-          note?: string | null
-          project_id: string
-          user_id: string
-        }
-        Update: {
-          address?: string | null
-          captured_at?: string
-          created_at?: string | null
-          id?: string
-          image_url?: string
-          latitude?: number | null
-          longitude?: number | null
-          note?: string | null
-          project_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_photos_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_photos_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       project_members: {
         Row: {
           created_at: string | null
@@ -638,6 +619,60 @@ export type Database = {
           },
           {
             foreignKeyName: "project_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_photos: {
+        Row: {
+          address: string | null
+          captured_at: string
+          created_at: string
+          id: string
+          image_url: string
+          latitude: number | null
+          longitude: number | null
+          note: string | null
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          captured_at?: string
+          created_at?: string
+          id?: string
+          image_url: string
+          latitude?: number | null
+          longitude?: number | null
+          note?: string | null
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          captured_at?: string
+          created_at?: string
+          id?: string
+          image_url?: string
+          latitude?: number | null
+          longitude?: number | null
+          note?: string | null
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_photos_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_photos_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -709,6 +744,35 @@ export type Database = {
           {
             foreignKeyName: "projects_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_tracker_settings: {
+        Row: {
+          checkin_time: string
+          id: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          checkin_time?: string
+          id?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          checkin_time?: string
+          id?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_tracker_settings_updated_by_fkey"
+            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -790,35 +854,6 @@ export type Database = {
           {
             foreignKeyName: "site_visits_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sales_tracker_settings: {
-        Row: {
-          checkin_time: string
-          id: string
-          updated_at: string | null
-          updated_by: string | null
-        }
-        Insert: {
-          checkin_time?: string
-          id?: string
-          updated_at?: string | null
-          updated_by?: string | null
-        }
-        Update: {
-          checkin_time?: string
-          id?: string
-          updated_at?: string | null
-          updated_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sales_tracker_settings_updated_by_fkey"
-            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1289,10 +1324,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      can_view_sales_tracker_of: {
-        Args: { target: string; uid: string }
-        Returns: boolean
-      }
       add_app_user: {
         Args: {
           p_department?: string
@@ -1304,6 +1335,10 @@ export type Database = {
           p_role: string
         }
         Returns: string
+      }
+      can_view_sales_tracker_of: {
+        Args: { target: string; uid: string }
+        Returns: boolean
       }
       deactivate_user: { Args: { p_email: string }; Returns: undefined }
       delete_app_user: { Args: { p_email: string }; Returns: undefined }
@@ -1324,6 +1359,15 @@ export type Database = {
         Returns: boolean
       }
       is_strict_admin: { Args: { uid: string }; Returns: boolean }
+      notify_sales_tracker_event: {
+        Args: {
+          p_body: string
+          p_reference_id: string
+          p_title: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       reactivate_user: { Args: { p_email: string }; Returns: undefined }
       reset_user_password: {
         Args: { p_email: string; p_new_password: string }
@@ -1370,12 +1414,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1399,11 +1443,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1424,11 +1468,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1449,11 +1493,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1466,11 +1510,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
