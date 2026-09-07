@@ -1,3 +1,4 @@
+// Force redeploy: updated comment to trigger fresh edge function deployment
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
