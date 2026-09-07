@@ -16,9 +16,15 @@
     "electron:dev": "concurrently -k \"npm:dev\" \"wait-on http://localhost:8080 && electron .\"",
     "electron:build": "npm run build && electron-builder --win --x64 --publish never",
     "electron:build:portable": "npm run build && electron-builder --win portable --x64 --publish never",
-    "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never"
+    "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
+    "android:build": "npm run build && cap sync android",
+    "android:run": "npm run build && cap run android",
+    "android:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/push-notifications": "^8.0.1",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -73,6 +79,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@eslint/js": "^9.32.0",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/typography": "^0.5.16",
