@@ -10,6 +10,7 @@ import UserAvatar from "@/components/UserAvatar";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/ThemeToggle";
 import DailyStatusModal from "@/components/DailyStatusModal";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { cn } from "@/lib/utils";
 
 type NavItem = { label: string; path: string; icon: typeof LayoutDashboard };
@@ -101,6 +102,7 @@ export default function AppLayout() {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  usePushNotifications();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDark, setIsDark] = useState(() =>
     typeof window !== "undefined" && document.documentElement.classList.contains("dark")
@@ -117,6 +119,34 @@ export default function AppLayout() {
   const canSeeSalesTracker = isSuperAdmin || isAdmin || isManager || isSalesDept;
   const nav = canSeeSalesTracker ? baseNav : baseNav.filter((item) => item.path !== "/sales-tracker");
 
+  const primaryTabs = isIntern
+    ? [
+        { label: "Dashboard", path: "/intern-dashboard", icon: LayoutDashboard },
+        { label: "Tasks", path: "/intern-tasks", icon: CheckSquare },
+        { label: "Projects", path: "/projects", icon: FolderKanban },
+        { label: "Notes", path: "/notes", icon: StickyNote },
+      ]
+    : isSuperAdmin || isAdmin
+    ? [
+        { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+        { label: "Tasks", path: "/tasks", icon: CheckSquare },
+        { label: "Projects", path: "/projects", icon: FolderKanban },
+        { label: "Users", path: "/users", icon: Users },
+      ]
+    : isManager
+    ? [
+        { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+        { label: "Tasks", path: "/tasks", icon: CheckSquare },
+        { label: "My Tasks", path: "/my-tasks", icon: ClipboardList },
+        { label: "Projects", path: "/projects", icon: FolderKanban },
+      ]
+    : [
+        { label: "Dashboard", path: "/my-dashboard", icon: LayoutDashboard },
+        { label: "My Tasks", path: "/my-tasks", icon: ClipboardList },
+        { label: "Projects", path: "/projects", icon: FolderKanban },
+        { label: "Calendar", path: "/calendar", icon: Calendar },
+      ];
+
   useEffect(() => {
     const observer = new MutationObserver(() => {
       setIsDark(document.documentElement.classList.contains("dark"));
@@ -131,7 +161,7 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background overflow-x-hidden w-full">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r border-border bg-card z-30">
         <div className="flex h-[60px] items-center border-b border-border px-3">
@@ -213,9 +243,11 @@ export default function AppLayout() {
       <AnimatePresence>
         {sidebarOpen && (
           <motion.aside
-            initial={{ x: -240 }} animate={{ x: 0 }} exit={{ x: -240 }}
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="fixed inset-y-0 left-0 w-60 bg-card border-r border-border z-50 flex flex-col md:hidden"
+            className="fixed inset-y-0 left-0 w-72 max-w-[82vw] bg-card border-r border-border z-50 flex flex-col md:hidden pt-safe pb-safe shadow-2xl"
           >
             <div className="flex h-[60px] items-center justify-between px-3 border-b border-border">
               <img
@@ -234,7 +266,11 @@ export default function AppLayout() {
                 fetchPriority="high"
                 decoding="sync"
               />
-              <button onClick={() => setSidebarOpen(false)} className="text-ink-muted z-10">
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="h-9 w-9 flex items-center justify-center rounded-lg text-ink-muted hover:text-ink-primary active:bg-muted transition-colors z-10"
+                aria-label="Close menu"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -248,7 +284,7 @@ export default function AppLayout() {
                         to={item.path}
                         onClick={() => setSidebarOpen(false)}
                         className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                          "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors active:scale-[0.98]",
                           active ? "bg-accent-light text-primary" : "text-ink-secondary hover:bg-muted"
                         )}
                       >
@@ -267,7 +303,12 @@ export default function AppLayout() {
                   <p className="truncate text-sm font-medium text-ink-primary">{profile?.full_name}</p>
                   <p className="truncate text-xs text-ink-muted capitalize">{profile?.role}</p>
                 </div>
-                <button onClick={handleSignOut} className="text-ink-muted hover:text-destructive transition-colors" title="Sign out">
+                <button
+                  onClick={handleSignOut}
+                  className="h-8 w-8 flex items-center justify-center text-ink-muted hover:text-destructive active:scale-95 transition-colors"
+                  title="Sign out"
+                  aria-label="Sign out"
+                >
                   <LogOut className="h-4 w-4" />
                 </button>
               </div>
@@ -277,46 +318,63 @@ export default function AppLayout() {
       </AnimatePresence>
 
       {/* Main content */}
-      <div className="flex-1 md:ml-60 flex flex-col min-h-screen">
+      <div className="flex-1 md:ml-60 flex flex-col min-h-screen min-w-0 overflow-x-hidden">
         {/* Header */}
-        <header className="sticky top-0 z-20 flex h-[60px] items-center gap-4 border-b border-border bg-card/80 backdrop-blur-sm px-4 md:px-8">
-          <button className="md:hidden text-ink-secondary" onClick={() => setSidebarOpen(true)}>
+        <header className="sticky top-0 z-20 flex pt-safe h-[calc(56px+env(safe-area-inset-top,0px))] md:h-[60px] items-center gap-2 sm:gap-3 border-b border-border bg-card/90 backdrop-blur-md px-3 sm:px-4 md:px-8">
+          <button
+            className="md:hidden text-ink-secondary h-10 w-10 flex items-center justify-center rounded-lg hover:bg-muted active:scale-95 transition-transform"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
+          >
             <Menu className="h-5 w-5" />
           </button>
-          <h1 className="font-heading text-lg font-semibold text-ink-primary hidden md:block">
-            {nav.find((n) => n.path === location.pathname)?.label ?? ""}
+          <h1 className="font-heading text-base sm:text-lg font-semibold text-ink-primary truncate flex-1 md:flex-none">
+            {nav.find((n) => n.path === location.pathname)?.label ?? "Task Flow"}
           </h1>
-          <div className="flex-1" />
-          <ThemeToggle />
-          <NotificationBell />
-          <Link to="/profile">
-            <UserAvatar name={profile?.full_name ?? ""} avatarUrl={profile?.avatar_url} size="sm" />
-          </Link>
+          <div className="hidden md:flex flex-1" />
+          <div className="flex items-center gap-1 sm:gap-2">
+            <ThemeToggle />
+            <NotificationBell />
+            <Link to="/profile" className="ml-1 active:scale-95 transition-transform">
+              <UserAvatar name={profile?.full_name ?? ""} avatarUrl={profile?.avatar_url} size="sm" />
+            </Link>
+          </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 md:px-8 md:py-8 max-w-[1280px] mx-auto w-full">
+        <main className="flex-1 px-3 sm:px-4 py-4 sm:py-6 md:px-8 md:py-8 max-w-[1280px] mx-auto w-full min-w-0 overflow-x-hidden pb-24 md:pb-8">
           <Outlet />
         </main>
       </div>
 
       {/* Mobile bottom tab bar */}
-      <div className="fixed bottom-0 left-0 right-0 flex md:hidden border-t border-border bg-card z-30">
-        {nav.slice(0, 5).map((item) => {
+      <div className="fixed bottom-0 left-0 right-0 flex md:hidden border-t border-border bg-card/95 backdrop-blur-md z-30 pb-safe shadow-lg">
+        {primaryTabs.map((item) => {
           const active = location.pathname === item.path;
           return (
             <Link
               key={item.path}
               to={item.path}
               className={cn(
-                "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors",
-                active ? "text-primary" : "text-ink-muted"
+                "flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] sm:text-[11px] font-medium transition-colors active:scale-95",
+                active ? "text-primary" : "text-ink-muted hover:text-ink-primary"
               )}
             >
-              <item.icon className="h-5 w-5" />
-              <span>{item.label}</span>
+              <div className={cn("p-1 rounded-full transition-colors", active ? "bg-accent-light text-primary" : "")}>
+                <item.icon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+              </div>
+              <span className="truncate max-w-[56px] sm:max-w-[70px]">{item.label}</span>
             </Link>
           );
         })}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] sm:text-[11px] font-medium transition-colors active:scale-95 text-ink-muted hover:text-ink-primary"
+        >
+          <div className="p-1 rounded-full">
+            <Menu className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
+          </div>
+          <span>More</span>
+        </button>
       </div>
 
       <DailyStatusModal />
