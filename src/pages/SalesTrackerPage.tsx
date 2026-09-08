@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
   Phone, User as UserIcon, Clock, Route as RouteIcon, Pencil, CalendarClock,
-  CheckCircle2, ArrowRightCircle, Circle,
+  CheckCircle2, ArrowRightCircle, Circle, Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -342,10 +342,10 @@ function SiteStopDetails({ visit }: { visit: SiteVisit }) {
 }
 
 function TripCard({
-  trip, ownerName, ownerAvatar, showOwner, onView, onEdit,
+  trip, ownerName, ownerAvatar, showOwner, onView, onEdit, onDelete,
 }: {
   trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean;
-  onView: () => void; onEdit?: () => void;
+  onView: () => void; onEdit?: () => void; onDelete?: () => void;
 }) {
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
@@ -398,6 +398,17 @@ function TripCard({
             )}
           </div>
         </div>
+        {showOwner && onDelete && (
+          <div onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-start">
+            <button
+              onClick={onDelete}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
+              title="Delete this site visit"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+          </div>
+        )}
         {!showOwner && (
           <div onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-start gap-2">
             {canEdit && onEdit && (
@@ -754,11 +765,29 @@ function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
 
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
+  const queryClient = useQueryClient();
   const [requestOpen, setRequestOpen] = useState(false);
   const [viewTrip, setViewTrip] = useState<{ trip: SiteVisit[]; ownerName?: string } | null>(null);
   const [editTrip, setEditTrip] = useState<SiteVisit[] | null>(null);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
+
+  // Team-lead-only cleanup: deletes every stop of a trip (all site_visits
+  // rows sharing its trip_group_id). If the trip was started from an
+  // approved request, that request's site_visit_id column references the
+  // deleted row and is set to NULL automatically (ON DELETE SET NULL),
+  // which also makes the request startable again if the rep needs to redo it.
+  const deleteTrip = useMutation({
+    mutationFn: async (tripGroupId: string) => {
+      const { error } = await supabase.from("site_visits").delete().eq("trip_group_id", tripGroupId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
+      toast.success("Site visit deleted");
+    },
+    onError: () => toast.error("Couldn't delete this site visit"),
+  });
 
   if (profile && !isTeamHead && !isSalesDept) {
     return (
@@ -930,6 +959,12 @@ export default function SalesTrackerPage() {
                     ownerAvatar={owner?.avatar_url}
                     showOwner
                     onView={() => setViewTrip({ trip, ownerName: owner?.full_name })}
+                    onDelete={() => {
+                      const label = trip.length > 1 ? `${trip.length} sites` : trip[0].site_name;
+                      if (window.confirm(`Delete ${owner?.full_name ?? "this"}'s visit to ${label}? This can't be undone.`)) {
+                        deleteTrip.mutate(trip[0].trip_group_id);
+                      }
+                    }}
                   />
                 );
               })}
