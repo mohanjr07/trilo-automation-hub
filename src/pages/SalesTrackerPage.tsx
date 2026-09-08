@@ -25,6 +25,15 @@ import SiteVisitApprovals from "@/components/SiteVisitApprovals";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
 
+/** True for admins/super_admins/managers — the roles allowed to see a
+ * rep's captured GPS check-in/check-out locations. A plain employee sees
+ * everything else about a visit (times, status, notes) but not location
+ * links. */
+function useCanViewVisitLocation() {
+  const { profile } = useAuth();
+  return profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
+}
+
 const STATUS_META: Record<string, { label: string; icon: typeof Building2; dot: string; bg: string; text: string }> = {
   office: { label: "In Office", icon: Building2, dot: "bg-primary", bg: "bg-accent-light", text: "text-primary" },
   site: { label: "On Site", icon: MapPin, dot: "bg-warning", bg: "bg-warning-light", text: "text-warning" },
@@ -289,11 +298,12 @@ function MapLink({ lat, lng }: { lat: number | null; lng: number | null }) {
 }
 
 function StopProgressBadge({ visit }: { visit: SiteVisit }) {
+  const canViewLocation = useCanViewVisitLocation();
   if (visit.departed_at) {
     return (
       <span className="flex items-center gap-1 rounded-full bg-success-light px-2 py-0.5 text-[10px] font-medium text-success">
         <CheckCircle2 className="h-3 w-3" /> Departed {format(new Date(visit.departed_at), "h:mm a")}
-        <MapLink lat={visit.departed_latitude} lng={visit.departed_longitude} />
+        {canViewLocation && <MapLink lat={visit.departed_latitude} lng={visit.departed_longitude} />}
       </span>
     );
   }
@@ -301,7 +311,7 @@ function StopProgressBadge({ visit }: { visit: SiteVisit }) {
     return (
       <span className="flex items-center gap-1 rounded-full bg-warning-light px-2 py-0.5 text-[10px] font-medium text-warning">
         <MapPin className="h-3 w-3" /> Arrived {format(new Date(visit.arrived_at), "h:mm a")}
-        <MapLink lat={visit.arrived_latitude} lng={visit.arrived_longitude} />
+        {canViewLocation && <MapLink lat={visit.arrived_latitude} lng={visit.arrived_longitude} />}
       </span>
     );
   }
@@ -533,6 +543,7 @@ function EditVisitModal({ trip, onClose }: { trip: SiteVisit[] | null; onClose: 
 
 /** Full read-only detail view for a trip, opened by clicking its card. */
 function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | null; ownerName?: string; onClose: () => void }) {
+  const canViewLocation = useCanViewVisitLocation();
   if (!trip) return null;
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
@@ -566,7 +577,7 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
                 <Clock className="h-3 w-3" /> Started {format(new Date(primary.started_at), "h:mm a")}
               </span>
             )}
-            {primary.start_latitude != null && primary.start_longitude != null && (
+            {canViewLocation && primary.start_latitude != null && primary.start_longitude != null && (
               <a
                 href={`https://www.google.com/maps?q=${primary.start_latitude},${primary.start_longitude}`}
                 target="_blank"
@@ -581,7 +592,7 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
                 <Clock className="h-3 w-3" /> Ended {format(new Date(primary.ended_at), "h:mm a")}
               </span>
             )}
-            {primary.end_latitude != null && primary.end_longitude != null && (
+            {canViewLocation && primary.end_latitude != null && primary.end_longitude != null && (
               <a
                 href={`https://www.google.com/maps?q=${primary.end_latitude},${primary.end_longitude}`}
                 target="_blank"
