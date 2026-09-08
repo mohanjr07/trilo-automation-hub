@@ -22,20 +22,16 @@ const BUCKET = "payment-receipts";
 
 type Project = { id: string; name: string };
 
-type ExpenseCategory = "food" | "travel" | "accommodation" | "petrol" | "other";
+// "Expense category" is no longer a fixed set — admins can add their own
+// from the Expense tier limits panel (see ExpenseTierLimitsPanel below).
+// "food"/"travel"/"accommodation"/"petrol"/"other" are the built-in keys
+// seeded by the database and can't be removed; "petrol" is the only key
+// with special behavior (the Total KM field) and "other" is the only key
+// with no tier limit (free manual entry).
+type ExpenseCategory = string;
+type ExpenseCategoryDef = { key: ExpenseCategory; label: string; is_builtin: boolean; sort_order: number };
 
-const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-  { value: "food", label: "Food" },
-  { value: "travel", label: "Travel" },
-  { value: "accommodation", label: "Accommodation" },
-  { value: "petrol", label: "Petrol" },
-  { value: "other", label: "Others (manual entry)" },
-];
-const CATEGORY_LABEL: Record<ExpenseCategory, string> = Object.fromEntries(
-  EXPENSE_CATEGORIES.map((c) => [c.value, c.label])
-) as Record<ExpenseCategory, string>;
-
-type TierLimit = { tier: 1 | 2 | 3; category: Exclude<ExpenseCategory, "other">; max_amount: number | null };
+type TierLimit = { tier: 1 | 2 | 3; category: ExpenseCategory; max_amount: number | null };
 
 type PaymentRequest = {
   id: string;
@@ -72,6 +68,9 @@ const STATUS_META: Record<PaymentRequest["status"], { label: string; bg: string;
 const formatAmount = (n: number) =>
   n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const categoryLabel = (categories: ExpenseCategoryDef[], key: string | null) =>
+  (key && categories.find((c) => c.key === key)?.label) || key || "—";
+
 function StatusBadge({ status }: { status: PaymentRequest["status"] }) {
   const meta = STATUS_META[status];
   return (
@@ -83,9 +82,9 @@ function StatusBadge({ status }: { status: PaymentRequest["status"] }) {
 
 /** Request Payment — open to any signed-in user. */
 function RequestPaymentModal({
-  open, onClose, projects, tierLimits,
+  open, onClose, projects, tierLimits, categories,
 }: {
-  open: boolean; onClose: () => void; projects: Project[]; tierLimits: TierLimit[];
+  open: boolean; onClose: () => void; projects: Project[]; tierLimits: TierLimit[]; categories: ExpenseCategoryDef[];
 }) {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
@@ -127,7 +126,7 @@ function RequestPaymentModal({
     if (capForCategory != null) {
       const n = parseFloat(v);
       if (!isNaN(n) && n > capForCategory) {
-        toast.error(`Capped at your Tier ${profile?.expense_tier} limit for ${CATEGORY_LABEL[category as ExpenseCategory]}: ₹${formatAmount(capForCategory)}`);
+        toast.error(`Capped at your Tier ${profile?.expense_tier} limit for ${categoryLabel(categories, category)}: ₹${formatAmount(capForCategory)}`);
         setAmount(String(capForCategory));
         return;
       }
@@ -141,7 +140,7 @@ function RequestPaymentModal({
     if (!purpose.trim()) { toast.error("Enter a purpose / description"); return; }
     if (!amountNum || amountNum <= 0) { toast.error("Enter a valid amount"); return; }
     if (capForCategory != null && amountNum > capForCategory) {
-      toast.error(`Amount exceeds your Tier ${profile?.expense_tier} limit for ${CATEGORY_LABEL[category as ExpenseCategory]}`);
+      toast.error(`Amount exceeds your Tier ${profile?.expense_tier} limit for ${categoryLabel(categories, category)}`);
       return;
     }
     if (paymentFor === "project" && isOtherProject && !manualProjectName.trim()) { toast.error("Type the project name"); return; }
@@ -261,7 +260,7 @@ function RequestPaymentModal({
                   <Select value={category || undefined} onValueChange={(v) => { setCategory(v as ExpenseCategory); setPetrolKm(""); }}>
                     <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
                     <SelectContent>
-                      {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                      {categories.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   {category === "petrol" && (
@@ -277,7 +276,7 @@ function RequestPaymentModal({
                   )}
                   {capForCategory != null && (
                     <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
-                      <Gauge className="h-3 w-3" /> Tier {profile?.expense_tier} limit for {CATEGORY_LABEL[category as ExpenseCategory]}: ₹{formatAmount(capForCategory)}
+                      <Gauge className="h-3 w-3" /> Tier {profile?.expense_tier} limit for {categoryLabel(categories, category)}: ₹{formatAmount(capForCategory)}
                     </p>
                   )}
                 </div>
@@ -325,9 +324,9 @@ function RequestPaymentModal({
 
 /** Full detail view — approve/reject (admin) or mark paid (accountant). */
 function PaymentDetailModal({
-  request, onClose, isAdmin, isAccountant,
+  request, onClose, isAdmin, isAccountant, categories,
 }: {
-  request: PaymentRequest | null; onClose: () => void; isAdmin: boolean; isAccountant: boolean;
+  request: PaymentRequest | null; onClose: () => void; isAdmin: boolean; isAccountant: boolean; categories: ExpenseCategoryDef[];
 }) {
   const queryClient = useQueryClient();
   const [rejecting, setRejecting] = useState(false);
@@ -431,7 +430,7 @@ function PaymentDetailModal({
               <p className="text-xs font-medium text-ink-muted">{request.payment_for === "expense" ? "Expense category" : "Project"}</p>
               <p className="text-sm text-ink-primary">
                 {request.payment_for === "expense"
-                  ? (request.expense_category ? CATEGORY_LABEL[request.expense_category] : "—")
+                  ? categoryLabel(categories, request.expense_category)
                   : (request.project_name ?? "—")}
               </p>
             </div>
@@ -551,6 +550,19 @@ export default function PaymentsPage() {
     enabled: !!user,
   });
 
+  // The expense category list — built-ins (Food/Travel/Accommodation/
+  // Petrol/Others) plus any an admin has added. Readable by everyone
+  // (needed for the request form's dropdown); only admins can add/remove.
+  const { data: categories = [] } = useQuery({
+    queryKey: ["expense-categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("expense_categories").select("key, label, is_builtin, sort_order").order("sort_order");
+      if (error) throw error;
+      return (data ?? []) as ExpenseCategoryDef[];
+    },
+    enabled: !!user,
+  });
+
   const counts = useMemo(() => ({
     total: requests.length,
     pending: requests.filter((r) => r.status === "pending").length,
@@ -633,7 +645,7 @@ export default function PaymentsPage() {
                     <p className="mt-1 text-xs text-ink-muted">
                       {(isAdmin || isAccountant) && r.requester_name ? `${r.requester_name} · ` : ""}
                       {r.payment_for === "expense"
-                        ? (r.expense_category ? `${CATEGORY_LABEL[r.expense_category]} · ` : "")
+                        ? (r.expense_category ? `${categoryLabel(categories, r.expense_category)} · ` : "")
                         : (r.project_name ? `${r.project_name} · ` : "")}
                       {format(new Date(r.created_at), "MMM d, yyyy")}
                     </p>
@@ -645,22 +657,28 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {isAdmin && <ExpenseTierLimitsPanel tierLimits={tierLimits} />}
+      {isAdmin && <ExpenseTierLimitsPanel tierLimits={tierLimits} categories={categories} />}
 
-      <RequestPaymentModal open={requestOpen} onClose={() => setRequestOpen(false)} projects={projects} tierLimits={tierLimits} />
-      <PaymentDetailModal request={viewRequest} onClose={() => setViewRequest(null)} isAdmin={isAdmin} isAccountant={isAccountant} />
+      <RequestPaymentModal open={requestOpen} onClose={() => setRequestOpen(false)} projects={projects} tierLimits={tierLimits} categories={categories} />
+      <PaymentDetailModal request={viewRequest} onClose={() => setViewRequest(null)} isAdmin={isAdmin} isAccountant={isAccountant} categories={categories} />
     </AnimatedPage>
   );
 }
 
-/** Admin-only: edit each tier's max claimable amount per expense category.
- * Values start blank (no cap) until set here — a blank cell means
- * unrestricted for that tier/category. User → tier assignment happens on
- * the Users page (Edit User → Expense Tier), not here. */
-function ExpenseTierLimitsPanel({ tierLimits }: { tierLimits: TierLimit[] }) {
+/** Admin-only: edit each tier's max claimable amount per expense category,
+ * and add or remove categories themselves. Limit values start blank (no
+ * cap) until set here — a blank cell means unrestricted for that
+ * tier/category. User → tier assignment happens on the Users page (Edit
+ * User → Expense Tier), not here. */
+function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tierLimits: TierLimit[]; categories: ExpenseCategoryDef[] }) {
   const queryClient = useQueryClient();
-  const categories: Exclude<ExpenseCategory, "other">[] = ["food", "travel", "accommodation", "petrol"];
+  // "Others" has no tier limit (it's the free-manual-entry fallback), so
+  // it doesn't get a row in this grid — only categories a claim can be
+  // capped on.
+  const categories = allCategories.filter((c) => c.key !== "other");
   const tiers: (1 | 2 | 3)[] = [1, 2, 3];
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
 
   const valueFor = (tier: 1 | 2 | 3, category: string) =>
     tierLimits.find((t) => t.tier === tier && t.category === category)?.max_amount;
@@ -697,6 +715,34 @@ function ExpenseTierLimitsPanel({ tierLimits }: { tierLimits: TierLimit[] }) {
     onError: () => toast.error("Couldn't save tier limits"),
   });
 
+  const addCategory = useMutation({
+    mutationFn: async (label: string) => {
+      const { error } = await supabase.rpc("add_expense_category", { p_key: label, p_label: label });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expense-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-tier-limits"] });
+      toast.success("Category added");
+      setNewCategoryName("");
+      setAddingCategory(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Couldn't add category"),
+  });
+
+  const removeCategory = useMutation({
+    mutationFn: async (key: string) => {
+      const { error } = await supabase.rpc("delete_expense_category", { p_key: key });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expense-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-tier-limits"] });
+      toast.success("Category removed");
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Couldn't remove category"),
+  });
+
   return (
     <div className="rounded-card border border-border bg-card p-5">
       <div className="mb-1 flex items-center gap-2">
@@ -707,33 +753,81 @@ function ExpenseTierLimitsPanel({ tierLimits }: { tierLimits: TierLimit[] }) {
         Maximum claimable amount per category, by tier. Leave a cell blank for no limit. Assign a user's tier from the Users page.
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] text-sm">
+        <table className="w-full min-w-[520px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
               <th className="py-2 pr-3">Category</th>
               {tiers.map((t) => <th key={t} className="py-2 pr-3">Tier {t}</th>)}
+              <th className="py-2 pr-3" />
             </tr>
           </thead>
           <tbody>
             {categories.map((c) => (
-              <tr key={c} className="border-b border-border last:border-0">
-                <td className="py-2 pr-3 font-medium text-ink-primary">{CATEGORY_LABEL[c]}</td>
+              <tr key={c.key} className="border-b border-border last:border-0">
+                <td className="py-2 pr-3 font-medium text-ink-primary">{c.label}</td>
                 {tiers.map((t) => (
                   <td key={t} className="py-2 pr-3">
                     <Input
                       type="number" min="0" step="0.01"
                       className="h-9 w-28"
                       placeholder="No limit"
-                      value={displayValue(t, c)}
-                      onChange={(e) => setEdits((prev) => ({ ...prev, [keyOf(t, c)]: e.target.value }))}
+                      value={displayValue(t, c.key)}
+                      onChange={(e) => setEdits((prev) => ({ ...prev, [keyOf(t, c.key)]: e.target.value }))}
                     />
                   </td>
                 ))}
+                <td className="py-2 pr-3">
+                  {!c.is_builtin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`Remove the "${c.label}" category? Existing requests keep it, but it won't be pickable anymore.`)) {
+                          removeCategory.mutate(c.key);
+                        }
+                      }}
+                      className="text-xs text-destructive hover:underline"
+                      disabled={removeCategory.isPending}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {addingCategory ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Input
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            placeholder="New category name, e.g. Medical"
+            className="h-9 w-56"
+            autoFocus
+          />
+          <Button
+            type="button" size="sm"
+            disabled={!newCategoryName.trim() || addCategory.isPending}
+            onClick={() => addCategory.mutate(newCategoryName.trim())}
+          >
+            {addCategory.isPending ? "Adding..." : "Add"}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => { setAddingCategory(false); setNewCategoryName(""); }}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAddingCategory(true)}
+          className="mt-4 flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          <Plus className="h-4 w-4" /> Add category
+        </button>
+      )}
+
       <div className="mt-4 flex justify-end">
         <Button type="button" disabled={Object.keys(edits).length === 0 || save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? "Saving..." : "Save limits"}
