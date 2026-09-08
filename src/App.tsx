@@ -36,6 +36,7 @@ import AssetsPage from "@/pages/AssetsPage";
 import KraKpiPage from "@/pages/KraKpiPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import SalesTrackerPage from "@/pages/SalesTrackerPage";
+import PaymentsPage from "@/pages/PaymentsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -84,6 +85,11 @@ const App = () => (
                   Visible to everyone signed in. Admin assigns; manager sees own team;
                   employees & interns see their manager + teammates. */}
               <Route path="/team-members" element={<TeamMembersPage />} />
+              <Route path="/sales-tracker" element={<SalesTrackerPage />} />
+              {/* Payments — visible to every signed-in role. Any user can
+                  request; admin/accountant-only actions are enforced at the
+                  DB level via RLS (see the payments migration). */}
+              <Route path="/payments" element={<PaymentsPage />} />
               {/* Legacy redirects so existing /teams and /my-teams links don't 404 */}
               <Route path="/teams" element={<Navigate to="/team-members" replace />} />
               <Route path="/my-teams" element={<Navigate to="/team-members" replace />} />
@@ -98,10 +104,6 @@ const App = () => (
               <Route path="/assets" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
               <Route path="/kra-kpi" element={<KraKpiPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
-              {/* Sales Tracker — visible to every signed-in role. Team heads
-                  (admin/super_admin/manager) additionally see their team's
-                  live status & site visits; RLS enforces the same scoping. */}
-              <Route path="/sales-tracker" element={<SalesTrackerPage />} />
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
 
