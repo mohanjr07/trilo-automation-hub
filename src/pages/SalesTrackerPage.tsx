@@ -80,11 +80,27 @@ function getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
 }
 
 type SiteVisitRequest = {
-  id: string; user_id: string; site_name: string; location: string;
+  id: string; user_id: string; trip_group_id: string; stop_order: number;
+  site_name: string; location: string;
   contact_person: string | null; contact_phone: string | null; purpose: string | null; notes: string | null;
   planned_at: string; status: "pending" | "approved" | "rejected";
   decision_note: string | null; site_visit_id: string | null; created_at: string;
 };
+
+/** Groups a flat list of trip-linked rows (site_visits OR site_visit_requests
+ * — both share trip_group_id + stop_order) into per-trip arrays, stops
+ * ordered by stop_order, groups ordered newest-first. */
+function groupByTrip<T extends { trip_group_id: string; stop_order: number; created_at: string }>(rows: T[]): T[][] {
+  const byGroup = new Map<string, T[]>();
+  for (const r of rows) {
+    const arr = byGroup.get(r.trip_group_id) ?? [];
+    arr.push(r);
+    byGroup.set(r.trip_group_id, arr);
+  }
+  const groups = Array.from(byGroup.values()).map((g) => [...g].sort((a, b) => a.stop_order - b.stop_order));
+  groups.sort((a, b) => new Date(b[0].created_at).getTime() - new Date(a[0].created_at).getTime());
+  return groups;
+}
 
 /** Groups site_visits rows that belong to the same trip (same trip_group_id),
  * stops ordered by stop_order, groups ordered newest-first. */
@@ -663,24 +679,28 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
 }
 
 /**
- * The rep's own requests — pending / approved / rejected. As soon as a
- * request is approved, "Start Visit" is available — it creates the
- * site_visits row (linked back via request_id) and hands off into the usual
- * TripControls flow for beginning/ending the visit. planned_at is shown for
- * reference only; it's no longer a gate on when Start Visit becomes usable.
+ * The rep's own requests — pending / approved / rejected, grouped by trip
+ * (a request can cover several stops). As soon as a trip is approved,
+ * "Start Visit" is available — it creates one site_visits row per stop
+ * (linked back via request_id, and the request rows get their site_visit_id
+ * filled in so the button doesn't show again) and hands off into the usual
+ * Begin/Arrived/Departure/End flow. planned_at is shown for reference only —
+ * it doesn't gate when Start Visit becomes usable.
  */
 function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  const tripGroups = useMemo(() => groupByTrip(requests), [requests]);
+
   const startFromRequest = useMutation({
-    mutationFn: async (req: SiteVisitRequest) => {
+    mutationFn: async (group: SiteVisitRequest[]) => {
       const tripGroupId = crypto.randomUUID();
-      const { error } = await supabase.from("site_visits").insert({
+      const rows = group.map((req, i) => ({
         user_id: user!.id,
         visit_date: today(),
         trip_group_id: tripGroupId,
-        stop_order: 1,
+        stop_order: i + 1,
         site_name: req.site_name,
         location: req.location,
         contact_person: req.contact_person,
@@ -689,48 +709,72 @@ function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
         notes: req.notes,
         request_id: req.id,
         trip_status: "not_started",
-      });
+      }));
+      const { data: created, error } = await supabase.from("site_visits").insert(rows).select("id, request_id");
       if (error) throw error;
+
+      // Write the new site_visits id back onto each request row it came
+      // from, so "already started" actually sticks and the button hides.
+      const updates = (created ?? []).map((row) =>
+        supabase.from("site_visit_requests").update({ site_visit_id: row.id }).eq("id", row.request_id)
+      );
+      const results = await Promise.all(updates);
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Visit added below — click \"Start Visit\" when you head out.");
+      queryClient.invalidateQueries({ queryKey: ["site-visit-requests"] });
+      toast.success("Visit added below — click \"Begin Visit\" when you head out.");
     },
     onError: () => toast.error("Couldn't start this visit"),
   });
 
-  if (requests.length === 0) return null;
+  if (tripGroups.length === 0) return null;
 
   return (
     <div className="rounded-card border border-border bg-card p-5">
       <h2 className="mb-4 font-heading text-lg font-semibold text-ink-primary">My requests</h2>
       <div className="space-y-3">
-        {requests.map((req) => {
-          const meta = REQUEST_META[req.status];
-          const alreadyStarted = !!req.site_visit_id;
+        {tripGroups.map((group) => {
+          const primary = group[0];
+          const meta = REQUEST_META[primary.status];
+          const alreadyStarted = group.some((r) => !!r.site_visit_id);
           return (
-            <div key={req.id} className="rounded-lg border border-border p-4">
+            <div key={primary.trip_group_id} className="rounded-lg border border-border p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="font-medium text-ink-primary">{req.site_name}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {req.location}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
-                    <CalendarClock className="h-3 w-3" /> Planned {format(new Date(req.planned_at), "d MMM, h:mm a")}
+                  <p className="font-medium text-ink-primary">
+                    {group.length > 1 ? `${group.length} sites` : primary.site_name}
                   </p>
-                  {req.status === "rejected" && req.decision_note && (
-                    <p className="mt-1 text-xs text-destructive">Reason: {req.decision_note}</p>
+                  {group.length > 1 ? (
+                    <div className="mt-1 space-y-0.5">
+                      {group.map((r, i) => (
+                        <p key={r.id} className="flex items-center gap-1 text-xs text-ink-muted">
+                          <MapPin className="h-3 w-3" /> {i + 1}. {r.site_name} — {r.location}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {primary.location}</p>
+                  )}
+                  <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
+                    <CalendarClock className="h-3 w-3" /> Planned {format(new Date(primary.planned_at), "d MMM, h:mm a")}
+                  </p>
+                  {primary.status === "rejected" && primary.decision_note && (
+                    <p className="mt-1 text-xs text-destructive">Reason: {primary.decision_note}</p>
                   )}
                 </div>
                 <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-medium", meta.bg, meta.text)}>{meta.label}</span>
               </div>
 
-              {req.status === "approved" && !alreadyStarted && (
+              {primary.status === "approved" && !alreadyStarted && (
                 <div className="mt-3 flex justify-end">
                   <Button
                     size="sm"
                     className="gap-1.5"
                     disabled={startFromRequest.isPending}
-                    onClick={() => startFromRequest.mutate(req)}
+                    onClick={() => startFromRequest.mutate(group)}
                   >
                     <Play className="h-3.5 w-3.5" />
                     {startFromRequest.isPending ? "Starting..." : "Start Visit"}
