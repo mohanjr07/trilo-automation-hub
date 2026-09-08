@@ -24,6 +24,7 @@ const iconColors: Record<string, string> = {
   task: "bg-accent-light text-primary",
   leave: "bg-warning-light text-warning",
   system: "bg-muted text-ink-muted",
+  payment: "bg-success-light text-success",
 };
 
 // Fire a native desktop notification via whichever channel is available:
@@ -193,7 +194,7 @@ export default function NotificationBell() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="absolute right-0 top-full mt-2 w-[340px] rounded-card bg-card shadow-modal border border-border z-50"
+            className="absolute right-0 top-full mt-2 w-[calc(100vw-1.5rem)] max-w-[340px] rounded-card bg-card shadow-modal border border-border z-50"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <h3 className="text-sm font-semibold text-ink-primary">Notifications</h3>
