@@ -128,32 +128,30 @@ type SiteStop = {
 /**
  * Trip controls for a multi-stop trip (e.g. Office -> Client B -> Office):
  *
- *   not_started  --Begin Visit (start KM)-->  in_progress
+ *   not_started  --Begin Visit-->  in_progress
  *   in_progress: for the first stop that hasn't been departed yet —
  *     no arrived_at  --Arrived at <site>-->  arrived_at set
  *     arrived_at set --Departure from <site>-->  departed_at set, advances
  *                                                 to the next stop
- *   once every stop has departed_at set  --End Visit (end KM)-->  completed
+ *   once every stop has departed_at set  --End Visit-->  completed
  *
- * started_at/ended_at/km_start/km_end/trip_status are trip-wide (bulk
+ * Every action is a single click — no manual KM entry. Each one captures
+ * GPS location + time. started_at/ended_at/trip_status are trip-wide (bulk
  * update across trip_group_id); arrived_at/departed_at are per stop.
  */
 function TripControls({ trip }: { trip: SiteVisit[] }) {
   const queryClient = useQueryClient();
-  const [kmInput, setKmInput] = useState("");
-  const [editingKm, setEditingKm] = useState<"start" | "end" | null>(null);
   const primary = trip[0];
   const tripGroupId = primary.trip_group_id;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
 
   const beginTrip = useMutation({
-    mutationFn: async (km: number) => {
+    mutationFn: async () => {
       // Capture where the rep actually is at check-in, alongside the time.
       const position = await getCurrentPosition();
       const { error } = await supabase.from("site_visits").update({
         trip_status: "in_progress",
-        km_start: km,
         started_at: new Date().toISOString(),
         start_latitude: position?.lat ?? null,
         start_longitude: position?.lng ?? null,
@@ -168,17 +166,15 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
           ? "Visit started — your location and time were recorded, and your manager has been notified"
           : "Visit started — your manager has been notified (location wasn't available; check your browser's location permission)"
       );
-      setEditingKm(null); setKmInput("");
     },
     onError: () => toast.error("Couldn't start the visit"),
   });
 
   const endTrip = useMutation({
-    mutationFn: async (km: number) => {
+    mutationFn: async () => {
       const position = await getCurrentPosition();
       const { error } = await supabase.from("site_visits").update({
         trip_status: "completed",
-        km_end: km,
         ended_at: new Date().toISOString(),
         end_latitude: position?.lat ?? null,
         end_longitude: position?.lng ?? null,
@@ -189,7 +185,6 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
     onSuccess: (position) => {
       invalidate();
       toast.success(position ? "Visit ended — your location and time were recorded" : "Visit ended — location wasn't available");
-      setEditingKm(null); setKmInput("");
     },
     onError: () => toast.error("Couldn't end the visit"),
   });
@@ -231,47 +226,18 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
   });
 
   if (primary.trip_status === "completed") {
-    const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
     return (
       <div className="flex items-center gap-1.5 text-xs text-success">
-        <RouteIcon className="h-3.5 w-3.5" />
-        {distance != null ? `${distance} km travelled` : "Completed"}
+        <RouteIcon className="h-3.5 w-3.5" /> Completed
       </div>
-    );
-  }
-
-  if (editingKm) {
-    return (
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const km = parseFloat(kmInput);
-          if (isNaN(km) || km < 0) { toast.error("Enter a valid KM reading"); return; }
-          if (editingKm === "start") beginTrip.mutate(km); else endTrip.mutate(km);
-        }}
-        className="flex items-center gap-2"
-      >
-        <Input
-          type="number"
-          step="0.1"
-          autoFocus
-          placeholder={editingKm === "start" ? "Starting KM" : "Ending KM"}
-          value={kmInput}
-          onChange={(e) => setKmInput(e.target.value)}
-          className="h-8 w-32"
-        />
-        <Button type="submit" size="sm" disabled={beginTrip.isPending || endTrip.isPending}>
-          {beginTrip.isPending || endTrip.isPending ? "Getting location..." : "Confirm"}
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => { setEditingKm(null); setKmInput(""); }}>Cancel</Button>
-      </form>
     );
   }
 
   if (primary.trip_status === "not_started") {
     return (
-      <Button size="sm" onClick={() => setEditingKm("start")} className="gap-1.5">
-        <Play className="h-3.5 w-3.5" /> Begin Visit
+      <Button size="sm" onClick={() => beginTrip.mutate()} disabled={beginTrip.isPending} className="gap-1.5">
+        <Play className="h-3.5 w-3.5" />
+        {beginTrip.isPending ? "Getting location..." : "Begin Visit"}
       </Button>
     );
   }
@@ -298,12 +264,10 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
 
   // Every stop has been departed from — trip is ready to close out.
   return (
-    <div className="flex items-center gap-3">
-      {primary.km_start != null && <span className="text-xs text-ink-muted">Start KM: {primary.km_start}</span>}
-      <Button size="sm" variant="destructive" onClick={() => setEditingKm("end")} className="gap-1.5">
-        <Square className="h-3.5 w-3.5" /> End Visit
-      </Button>
-    </div>
+    <Button size="sm" variant="destructive" onClick={() => endTrip.mutate()} disabled={endTrip.isPending} className="gap-1.5">
+      <Square className="h-3.5 w-3.5" />
+      {endTrip.isPending ? "Getting location..." : "End Visit"}
+    </Button>
   );
 }
 
@@ -572,7 +536,6 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
   if (!trip) return null;
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
-  const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
 
   return (
     <AnimatePresence>
@@ -598,17 +561,6 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
 
           <div className="mb-5 flex flex-wrap items-center gap-3">
             <span className={cn("rounded-full px-3 py-1 text-xs font-medium", meta.bg, meta.text)}>{meta.label}</span>
-            {primary.km_start != null && (
-              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-ink-secondary">Start KM: {primary.km_start}</span>
-            )}
-            {primary.km_end != null && (
-              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-ink-secondary">End KM: {primary.km_end}</span>
-            )}
-            {distance != null && (
-              <span className="flex items-center gap-1 rounded-full bg-success-light px-3 py-1 text-xs font-medium text-success">
-                <RouteIcon className="h-3.5 w-3.5" /> {distance} km travelled
-              </span>
-            )}
             {primary.started_at && (
               <span className="flex items-center gap-1 text-xs text-ink-muted">
                 <Clock className="h-3 w-3" /> Started {format(new Date(primary.started_at), "h:mm a")}
