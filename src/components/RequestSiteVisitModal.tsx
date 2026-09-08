@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import LocationAutocompleteInput from "@/components/LocationAutocompleteInput";
 import { toast } from "sonner";
 
 type FormState = {
@@ -137,7 +138,7 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-ink-primary">Location / Address *</label>
-                  <Input value={form.location} onChange={(e) => update({ location: e.target.value })} />
+                  <LocationAutocompleteInput value={form.location} onChange={(v) => update({ location: v })} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
