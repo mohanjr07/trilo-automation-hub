@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, X, FileText, Download, CheckCircle2, XCircle,
-  Clock, Banknote, Upload, Filter,
+  Clock, Banknote, Upload, Filter, Settings2, Gauge,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,12 +22,30 @@ const BUCKET = "payment-receipts";
 
 type Project = { id: string; name: string };
 
+type ExpenseCategory = "food" | "travel" | "accommodation" | "petrol" | "other";
+
+const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
+  { value: "food", label: "Food" },
+  { value: "travel", label: "Travel" },
+  { value: "accommodation", label: "Accommodation" },
+  { value: "petrol", label: "Petrol" },
+  { value: "other", label: "Others (manual entry)" },
+];
+const CATEGORY_LABEL: Record<ExpenseCategory, string> = Object.fromEntries(
+  EXPENSE_CATEGORIES.map((c) => [c.value, c.label])
+) as Record<ExpenseCategory, string>;
+
+type TierLimit = { tier: 1 | 2 | 3; category: Exclude<ExpenseCategory, "other">; max_amount: number | null };
+
 type PaymentRequest = {
   id: string;
   requester_id: string;
   requester_name: string | null;
+  payment_for: "project" | "expense";
   project_id: string | null;
   project_name: string | null;
+  expense_category: ExpenseCategory | null;
+  petrol_km: number | null;
   purpose: string;
   amount: number;
   bill_file_path: string;
@@ -64,24 +82,57 @@ function StatusBadge({ status }: { status: PaymentRequest["status"] }) {
 }
 
 /** Request Payment — open to any signed-in user. */
-function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClose: () => void; projects: Project[] }) {
-  const { user } = useAuth();
+function RequestPaymentModal({
+  open, onClose, projects, tierLimits,
+}: {
+  open: boolean; onClose: () => void; projects: Project[]; tierLimits: TierLimit[];
+}) {
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+  const [paymentFor, setPaymentFor] = useState<"project" | "expense">("project");
   const [projectId, setProjectId] = useState<string>("");
   const [manualProjectName, setManualProjectName] = useState("");
+  const [category, setCategory] = useState<ExpenseCategory | "">("");
+  const [petrolKm, setPetrolKm] = useState("");
   const [purpose, setPurpose] = useState("");
   const [amount, setAmount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const isOther = projectId === "__other__";
+  const isOtherProject = projectId === "__other__";
+
+  // The requester's own tier's max for the picked category — null/undefined
+  // means "no cap" (either the user has no tier assigned yet, or the admin
+  // hasn't set a limit for this tier/category yet).
+  const capForCategory = useMemo(() => {
+    if (!profile?.expense_tier || !category || category === "other") return null;
+    const row = tierLimits.find((t) => t.tier === profile.expense_tier && t.category === category);
+    return row?.max_amount ?? null;
+  }, [profile?.expense_tier, category, tierLimits]);
 
   const reset = () => {
+    setPaymentFor("project");
     setProjectId("");
     setManualProjectName("");
+    setCategory("");
+    setPetrolKm("");
     setPurpose("");
     setAmount("");
     setFile(null);
+  };
+
+  // Blocks typing an amount over the requester's tier cap for the picked
+  // category, rather than only rejecting it on submit.
+  const onAmountChange = (v: string) => {
+    if (capForCategory != null) {
+      const n = parseFloat(v);
+      if (!isNaN(n) && n > capForCategory) {
+        toast.error(`Capped at your Tier ${profile?.expense_tier} limit for ${CATEGORY_LABEL[category as ExpenseCategory]}: ₹${formatAmount(capForCategory)}`);
+        setAmount(String(capForCategory));
+        return;
+      }
+    }
+    setAmount(v);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -89,7 +140,16 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
     const amountNum = parseFloat(amount);
     if (!purpose.trim()) { toast.error("Enter a purpose / description"); return; }
     if (!amountNum || amountNum <= 0) { toast.error("Enter a valid amount"); return; }
-    if (isOther && !manualProjectName.trim()) { toast.error("Type the project name"); return; }
+    if (capForCategory != null && amountNum > capForCategory) {
+      toast.error(`Amount exceeds your Tier ${profile?.expense_tier} limit for ${CATEGORY_LABEL[category as ExpenseCategory]}`);
+      return;
+    }
+    if (paymentFor === "project" && isOtherProject && !manualProjectName.trim()) { toast.error("Type the project name"); return; }
+    if (paymentFor === "expense" && !category) { toast.error("Select an expense category"); return; }
+    if (paymentFor === "expense" && category === "petrol" && (!petrolKm || parseFloat(petrolKm) <= 0)) {
+      toast.error("Enter the total KM for petrol");
+      return;
+    }
     if (!file) { toast.error("Attach the bill / receipt"); return; }
 
     setSubmitting(true);
@@ -104,12 +164,15 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
 
       const { error: insErr } = await supabase.from("payment_requests").insert({
         requester_id: user!.id,
-        // "Other" -> no project_id (not one of the picked projects), but the
-        // typed name is stored directly on project_name. The server-side
-        // trigger only overwrites project_name when project_id is set, so
-        // a manually typed name is left exactly as submitted here.
-        project_id: isOther || !projectId ? null : projectId,
-        project_name: isOther ? manualProjectName.trim() : null,
+        payment_for: paymentFor,
+        // "Other" project -> no project_id, but the typed name is stored
+        // directly on project_name. The server-side trigger only overwrites
+        // project_name when project_id is set, so a manually typed name is
+        // left exactly as submitted here.
+        project_id: paymentFor === "project" && !isOtherProject && projectId ? projectId : null,
+        project_name: paymentFor === "project" && isOtherProject ? manualProjectName.trim() : null,
+        expense_category: paymentFor === "expense" ? category : null,
+        petrol_km: paymentFor === "expense" && category === "petrol" ? parseFloat(petrolKm) : null,
         purpose: purpose.trim(),
         amount: amountNum,
         bill_file_path: path,
@@ -151,36 +214,87 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
 
             <form onSubmit={submit} className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Project</label>
-                <Select value={projectId || undefined} onValueChange={setProjectId}>
-                  <SelectTrigger><SelectValue placeholder="Select a project (optional)" /></SelectTrigger>
+                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Payment for *</label>
+                <Select
+                  value={paymentFor}
+                  onValueChange={(v) => {
+                    setPaymentFor(v as "project" | "expense");
+                    setProjectId(""); setManualProjectName(""); setCategory(""); setPetrolKm("");
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                    <SelectItem value="__other__">Other…</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                    <SelectItem value="expense">Expense</SelectItem>
                   </SelectContent>
                 </Select>
-                {projects.length === 0 && !isOther && (
-                  <p className="mt-1.5 text-xs text-ink-muted">
-                    No active projects found — pick "Other…" to type one, or leave this blank.
-                  </p>
-                )}
-                {isOther && (
-                  <Input
-                    className="mt-2"
-                    value={manualProjectName}
-                    onChange={(e) => setManualProjectName(e.target.value)}
-                    placeholder="Type the project name"
-                    autoFocus
-                  />
-                )}
               </div>
+
+              {paymentFor === "project" ? (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Project</label>
+                  <Select value={projectId || undefined} onValueChange={setProjectId}>
+                    <SelectTrigger><SelectValue placeholder="Select a project (optional)" /></SelectTrigger>
+                    <SelectContent>
+                      {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      <SelectItem value="__other__">Other…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {projects.length === 0 && !isOtherProject && (
+                    <p className="mt-1.5 text-xs text-ink-muted">
+                      No active projects found — pick "Other…" to type one, or leave this blank.
+                    </p>
+                  )}
+                  {isOtherProject && (
+                    <Input
+                      className="mt-2"
+                      value={manualProjectName}
+                      onChange={(e) => setManualProjectName(e.target.value)}
+                      placeholder="Type the project name"
+                      autoFocus
+                    />
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Expense category *</label>
+                  <Select value={category || undefined} onValueChange={(v) => { setCategory(v as ExpenseCategory); setPetrolKm(""); }}>
+                    <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
+                    <SelectContent>
+                      {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {category === "petrol" && (
+                    <div className="mt-2">
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Total KM *</label>
+                      <Input
+                        type="number" min="0.1" step="0.1"
+                        value={petrolKm}
+                        onChange={(e) => setPetrolKm(e.target.value)}
+                        placeholder="e.g. 42"
+                      />
+                    </div>
+                  )}
+                  {capForCategory != null && (
+                    <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
+                      <Gauge className="h-3 w-3" /> Tier {profile?.expense_tier} limit for {CATEGORY_LABEL[category as ExpenseCategory]}: ₹{formatAmount(capForCategory)}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Purpose / Description *</label>
-                <Textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={3} placeholder="What is this payment for?" autoFocus />
+                <Textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={3} placeholder="What is this payment for?" />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Amount *</label>
-                <Input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+                <Input
+                  type="number" min="0.01" step="0.01" max={capForCategory ?? undefined}
+                  value={amount}
+                  onChange={(e) => onAmountChange(e.target.value)}
+                  placeholder="0.00"
+                />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Bill / Receipt *</label>
@@ -313,8 +427,16 @@ function PaymentDetailModal({
           <div className="mb-5"><StatusBadge status={request.status} /></div>
 
           <div className="space-y-3 rounded-lg border border-border p-4">
-            {request.project_name && (
-              <div><p className="text-xs font-medium text-ink-muted">Project</p><p className="text-sm text-ink-primary">{request.project_name}</p></div>
+            <div>
+              <p className="text-xs font-medium text-ink-muted">{request.payment_for === "expense" ? "Expense category" : "Project"}</p>
+              <p className="text-sm text-ink-primary">
+                {request.payment_for === "expense"
+                  ? (request.expense_category ? CATEGORY_LABEL[request.expense_category] : "—")
+                  : (request.project_name ?? "—")}
+              </p>
+            </div>
+            {request.payment_for === "expense" && request.expense_category === "petrol" && request.petrol_km != null && (
+              <div><p className="text-xs font-medium text-ink-muted">Total KM</p><p className="text-sm text-ink-primary">{request.petrol_km}</p></div>
             )}
             <div><p className="text-xs font-medium text-ink-muted">Purpose</p><p className="text-sm text-ink-primary">{request.purpose}</p></div>
             <div>
@@ -417,6 +539,18 @@ export default function PaymentsPage() {
     enabled: !!user,
   });
 
+  // Readable by everyone (needed so a requester's amount field can be
+  // capped client-side); only admins can write to this table (RLS).
+  const { data: tierLimits = [] } = useQuery({
+    queryKey: ["expense-tier-limits"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("expense_tier_limits").select("tier, category, max_amount");
+      if (error) throw error;
+      return (data ?? []) as TierLimit[];
+    },
+    enabled: !!user,
+  });
+
   const counts = useMemo(() => ({
     total: requests.length,
     pending: requests.filter((r) => r.status === "pending").length,
@@ -498,7 +632,9 @@ export default function PaymentsPage() {
                     <p className="mt-0.5 text-sm text-ink-muted">{r.purpose}</p>
                     <p className="mt-1 text-xs text-ink-muted">
                       {(isAdmin || isAccountant) && r.requester_name ? `${r.requester_name} · ` : ""}
-                      {r.project_name ? `${r.project_name} · ` : ""}
+                      {r.payment_for === "expense"
+                        ? (r.expense_category ? `${CATEGORY_LABEL[r.expense_category]} · ` : "")
+                        : (r.project_name ? `${r.project_name} · ` : "")}
                       {format(new Date(r.created_at), "MMM d, yyyy")}
                     </p>
                   </div>
@@ -509,8 +645,100 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      <RequestPaymentModal open={requestOpen} onClose={() => setRequestOpen(false)} projects={projects} />
+      {isAdmin && <ExpenseTierLimitsPanel tierLimits={tierLimits} />}
+
+      <RequestPaymentModal open={requestOpen} onClose={() => setRequestOpen(false)} projects={projects} tierLimits={tierLimits} />
       <PaymentDetailModal request={viewRequest} onClose={() => setViewRequest(null)} isAdmin={isAdmin} isAccountant={isAccountant} />
     </AnimatedPage>
+  );
+}
+
+/** Admin-only: edit each tier's max claimable amount per expense category.
+ * Values start blank (no cap) until set here — a blank cell means
+ * unrestricted for that tier/category. User → tier assignment happens on
+ * the Users page (Edit User → Expense Tier), not here. */
+function ExpenseTierLimitsPanel({ tierLimits }: { tierLimits: TierLimit[] }) {
+  const queryClient = useQueryClient();
+  const categories: Exclude<ExpenseCategory, "other">[] = ["food", "travel", "accommodation", "petrol"];
+  const tiers: (1 | 2 | 3)[] = [1, 2, 3];
+
+  const valueFor = (tier: 1 | 2 | 3, category: string) =>
+    tierLimits.find((t) => t.tier === tier && t.category === category)?.max_amount;
+
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const keyOf = (tier: number, category: string) => `${tier}-${category}`;
+
+  const displayValue = (tier: 1 | 2 | 3, category: string) => {
+    const k = keyOf(tier, category);
+    if (k in edits) return edits[k];
+    const v = valueFor(tier, category);
+    return v == null ? "" : String(v);
+  };
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const writes = Object.entries(edits).map(([k, v]) => {
+        const [tierStr, category] = k.split("-");
+        return {
+          tier: Number(tierStr),
+          category,
+          max_amount: v.trim() === "" ? null : parseFloat(v),
+        };
+      });
+      if (writes.length === 0) return;
+      const { error } = await supabase.from("expense_tier_limits").upsert(writes, { onConflict: "tier,category" });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expense-tier-limits"] });
+      toast.success("Tier limits saved");
+      setEdits({});
+    },
+    onError: () => toast.error("Couldn't save tier limits"),
+  });
+
+  return (
+    <div className="rounded-card border border-border bg-card p-5">
+      <div className="mb-1 flex items-center gap-2">
+        <Settings2 className="h-4 w-4 text-ink-muted" />
+        <h2 className="font-heading text-lg font-semibold text-ink-primary">Expense tier limits</h2>
+      </div>
+      <p className="mb-4 text-xs text-ink-muted">
+        Maximum claimable amount per category, by tier. Leave a cell blank for no limit. Assign a user's tier from the Users page.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
+              <th className="py-2 pr-3">Category</th>
+              {tiers.map((t) => <th key={t} className="py-2 pr-3">Tier {t}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => (
+              <tr key={c} className="border-b border-border last:border-0">
+                <td className="py-2 pr-3 font-medium text-ink-primary">{CATEGORY_LABEL[c]}</td>
+                {tiers.map((t) => (
+                  <td key={t} className="py-2 pr-3">
+                    <Input
+                      type="number" min="0" step="0.01"
+                      className="h-9 w-28"
+                      placeholder="No limit"
+                      value={displayValue(t, c)}
+                      onChange={(e) => setEdits((prev) => ({ ...prev, [keyOf(t, c)]: e.target.value }))}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button type="button" disabled={Object.keys(edits).length === 0 || save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? "Saving..." : "Save limits"}
+        </Button>
+      </div>
+    </div>
   );
 }
