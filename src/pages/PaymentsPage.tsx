@@ -68,13 +68,17 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [projectId, setProjectId] = useState<string>("");
+  const [manualProjectName, setManualProjectName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [amount, setAmount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const isOther = projectId === "__other__";
+
   const reset = () => {
     setProjectId("");
+    setManualProjectName("");
     setPurpose("");
     setAmount("");
     setFile(null);
@@ -85,6 +89,7 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
     const amountNum = parseFloat(amount);
     if (!purpose.trim()) { toast.error("Enter a purpose / description"); return; }
     if (!amountNum || amountNum <= 0) { toast.error("Enter a valid amount"); return; }
+    if (isOther && !manualProjectName.trim()) { toast.error("Type the project name"); return; }
     if (!file) { toast.error("Attach the bill / receipt"); return; }
 
     setSubmitting(true);
@@ -99,7 +104,12 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
 
       const { error: insErr } = await supabase.from("payment_requests").insert({
         requester_id: user!.id,
-        project_id: projectId || null,
+        // "Other" -> no project_id (not one of the picked projects), but the
+        // typed name is stored directly on project_name. The server-side
+        // trigger only overwrites project_name when project_id is set, so
+        // a manually typed name is left exactly as submitted here.
+        project_id: isOther || !projectId ? null : projectId,
+        project_name: isOther ? manualProjectName.trim() : null,
         purpose: purpose.trim(),
         amount: amountNum,
         bill_file_path: path,
@@ -142,17 +152,26 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
             <form onSubmit={submit} className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Project</label>
-                {projects.length > 0 ? (
-                  <Select value={projectId || undefined} onValueChange={setProjectId}>
-                    <SelectTrigger><SelectValue placeholder="Select a project (optional)" /></SelectTrigger>
-                    <SelectContent>
-                      {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-ink-muted">
-                    No active projects found — the request can still be submitted without one.
+                <Select value={projectId || undefined} onValueChange={setProjectId}>
+                  <SelectTrigger><SelectValue placeholder="Select a project (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    <SelectItem value="__other__">Other…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {projects.length === 0 && !isOther && (
+                  <p className="mt-1.5 text-xs text-ink-muted">
+                    No active projects found — pick "Other…" to type one, or leave this blank.
                   </p>
+                )}
+                {isOther && (
+                  <Input
+                    className="mt-2"
+                    value={manualProjectName}
+                    onChange={(e) => setManualProjectName(e.target.value)}
+                    placeholder="Type the project name"
+                    autoFocus
+                  />
                 )}
               </div>
               <div>
