@@ -30,14 +30,14 @@ type Project = { id: string; name: string };
 // any custom category an admin adds are ungrouped (group_key null) and
 // listed on their own, outside either section.
 type ExpenseCategory = string;
-// rate_unit_label: null = flat max amount cap. "meal" or "km" = the tier
+// rate_unit_label: null = flat max amount cap. "day" or "km" = the tier
 // limit is a per-unit RATE, and the allowed amount for a request is
 // rate × units (meal_count or petrol_km) — set on the Food/Petrol line
 // item in each section via migration; any custom category an admin adds
 // is flat by default.
 type ExpenseCategoryDef = {
   key: ExpenseCategory; label: string; is_builtin: boolean; sort_order: number;
-  rate_unit_label: "meal" | "km" | null; group_key: string | null; group_label: string | null;
+  rate_unit_label: "day" | "km" | null; group_key: string | null; group_label: string | null;
 };
 
 type TierLimit = { tier: 1 | 2 | 3; category: ExpenseCategory; max_amount: number | null };
@@ -150,7 +150,7 @@ function RequestPaymentModal({
     if (!category || category === "other") return null;
     const row = tierLimits.find((t) => t.category === category);
     if (row?.max_amount == null) return null;
-    if (rateUnitLabel === "meal") {
+    if (rateUnitLabel === "day") {
       const units = parseFloat(mealCount);
       return !isNaN(units) && units > 0 ? row.max_amount * units : null;
     }
@@ -209,8 +209,8 @@ function RequestPaymentModal({
       toast.error("Enter the total KM for petrol");
       return;
     }
-    if (paymentFor === "expense" && rateUnitLabel === "meal" && (!mealCount || parseFloat(mealCount) <= 0)) {
-      toast.error("Enter the number of meals");
+    if (paymentFor === "expense" && rateUnitLabel === "day" && (!mealCount || parseFloat(mealCount) <= 0)) {
+      toast.error("Enter the number of days");
       return;
     }
     if (!file) { toast.error("Attach the bill / receipt"); return; }
@@ -236,7 +236,7 @@ function RequestPaymentModal({
         project_name: paymentFor === "project" && isOtherProject ? manualProjectName.trim() : null,
         expense_category: paymentFor === "expense" ? category : null,
         petrol_km: paymentFor === "expense" && rateUnitLabel === "km" ? parseFloat(petrolKm) : null,
-        meal_count: paymentFor === "expense" && rateUnitLabel === "meal" ? parseFloat(mealCount) : null,
+        meal_count: paymentFor === "expense" && rateUnitLabel === "day" ? parseFloat(mealCount) : null,
         purpose: purpose.trim(),
         amount: amountNum,
         bill_file_path: path,
@@ -345,14 +345,14 @@ function RequestPaymentModal({
                       />
                     </div>
                   )}
-                  {rateUnitLabel === "meal" && (
+                  {rateUnitLabel === "day" && (
                     <div className="mt-2">
-                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Number of meals *</label>
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Number of days *</label>
                       <Input
                         type="number" min="0.5" step="0.5"
                         value={mealCount}
                         onChange={(e) => setMealCount(e.target.value)}
-                        placeholder="e.g. 2"
+                        placeholder="e.g. 3"
                       />
                     </div>
                   )}
@@ -526,7 +526,7 @@ function PaymentDetailModal({
               <div><p className="text-xs font-medium text-ink-muted">Total KM</p><p className="text-sm text-ink-primary">{request.petrol_km}</p></div>
             )}
             {request.payment_for === "expense" && request.meal_count != null && (
-              <div><p className="text-xs font-medium text-ink-muted">Meals</p><p className="text-sm text-ink-primary">{request.meal_count}</p></div>
+              <div><p className="text-xs font-medium text-ink-muted">Days</p><p className="text-sm text-ink-primary">{request.meal_count}</p></div>
             )}
             <div><p className="text-xs font-medium text-ink-muted">Purpose</p><p className="text-sm text-ink-primary">{request.purpose}</p></div>
             <div>
@@ -853,7 +853,7 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
         <h2 className="font-heading text-lg font-semibold text-ink-primary">Expense limits</h2>
       </div>
       <p className="mb-4 text-xs text-ink-muted">
-        Maximum claimable amount per category — the same for every requester. Food and Petrol are a rate per meal / per km (multiplied by the meals or KM entered on the request); other categories are a flat cap. Leave a cell blank for no limit.
+        Maximum claimable amount per category — the same for every requester. Food is a rate per day and Petrol a rate per km (multiplied by the days or KM entered on the request); other categories are a flat cap. Leave a cell blank for no limit.
       </p>
       {sections.groups.map((g) => (
         <div key={g.key} className="mb-5">
