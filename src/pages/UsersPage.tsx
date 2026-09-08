@@ -113,47 +113,49 @@ export default function UsersPage() {
 
   return (
     <AnimatedPage>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
         <div>
-          <h1 className="font-heading text-[28px] font-bold text-ink-primary">Users</h1>
+          <h1 className="font-heading text-xl sm:text-[28px] font-bold text-ink-primary">Users</h1>
           <p className="text-sm text-ink-muted">{totalUsers} total members</p>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="gap-2">
+        <Button onClick={() => setAddOpen(true)} className="gap-1.5 h-9 sm:h-10 px-3 sm:px-4 text-xs sm:text-sm font-semibold rounded-lg shadow-sm active:scale-95 self-start sm:self-auto">
           <UserPlus className="h-4 w-4" /> Add User
         </Button>
       </div>
 
-      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-4 sm:mb-6">
         <StatCard title="Total Users" value={totalUsers} icon={UsersIcon} />
         <StatCard title="Admins" value={adminCount} icon={Shield} iconBg="bg-accent-light" iconColor="text-primary" />
         <StatCard title="Employees" value={employeeCount} icon={UsersIcon} iconBg="bg-purple-light" iconColor="text-purple" />
         <StatCard title="Active" value={activeCount} icon={UserCheck} iconBg="bg-success-light" iconColor="text-success" />
       </motion.div>
 
-      <div className="flex flex-wrap gap-3 mb-6">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2.5 sm:gap-3 mb-4 sm:mb-6">
+        <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email..." className="pl-9 h-10" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email..." className="pl-9 h-9 sm:h-10" />
         </div>
-        <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="w-[140px] h-10"><SelectValue placeholder="Role" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Roles</SelectItem>
-            <SelectItem value="super_admin">Super Admin</SelectItem>
-            <SelectItem value="admin">Admin</SelectItem>
-            <SelectItem value="manager">Manager</SelectItem>
-            <SelectItem value="employee">Employee</SelectItem>
-            <SelectItem value="intern">Intern</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px] h-10"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-[130px] sm:w-[140px] h-9 sm:h-10 text-xs sm:text-sm"><SelectValue placeholder="Role" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="super_admin">Super Admin</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+              <SelectItem value="manager">Manager</SelectItem>
+              <SelectItem value="employee">Employee</SelectItem>
+              <SelectItem value="intern">Intern</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[130px] sm:w-[140px] h-9 sm:h-10 text-xs sm:text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {isLoading ? (
@@ -349,10 +351,10 @@ function AddUserModal({ open, onClose }: { open: boolean; onClose: () => void })
   const selectedRole = watch("role");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ display: open ? 'flex' : 'none' }}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ display: open ? 'flex' : 'none' }}>
       <motion.div animate={{ opacity: open ? 1 : 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4">
+      <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
+        className="relative w-full md:max-w-[520px] max-h-[92vh] overflow-y-auto rounded-t-modal md:rounded-modal bg-card p-5 sm:p-6 shadow-modal">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-heading text-xl font-bold text-ink-primary">Add New User</h2>
           <button onClick={onClose} className="text-ink-muted hover:text-ink-primary"><X className="h-5 w-5" /></button>
@@ -457,6 +459,7 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
       department: editingUser.department ?? "",
       position: editingUser.position ?? "",
       phone: editingUser.phone ?? "",
+      expense_tier: editingUser.expense_tier ? String(editingUser.expense_tier) : "none",
     },
   });
 
@@ -471,6 +474,14 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
         p_phone: data.phone || null,
       });
       if (error) throw error;
+
+      // Expense tier is a separate, admin-only RPC (Payments feature) —
+      // not part of update_app_user's signature.
+      const { error: tierError } = await supabase.rpc("set_user_expense_tier", {
+        p_user_id: editingUser.id,
+        p_tier: data.expense_tier === "none" ? null : Number(data.expense_tier),
+      });
+      if (tierError) throw tierError;
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["users-profiles"] });
@@ -483,10 +494,10 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-[480px] rounded-modal bg-card p-6 shadow-modal mx-4">
+      <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
+        className="relative w-full md:max-w-[480px] max-h-[92vh] overflow-y-auto rounded-t-modal md:rounded-modal bg-card p-5 sm:p-6 shadow-modal">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-heading text-xl font-bold text-ink-primary">Edit User</h2>
           <button onClick={onClose} className="text-ink-muted"><X className="h-5 w-5" /></button>
@@ -528,6 +539,19 @@ function EditUserModal({ user: editingUser, onClose }: { user: any; onClose: () 
           <div>
             <label className="mb-1.5 block text-sm font-medium text-ink-primary">Phone</label>
             <Input {...register("phone")} className="h-10" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-ink-primary">Expense Tier</label>
+            <Select value={watch("expense_tier")} onValueChange={(v) => setValue("expense_tier", v)}>
+              <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not assigned (no expense limit)</SelectItem>
+                <SelectItem value="1">Tier 1</SelectItem>
+                <SelectItem value="2">Tier 2</SelectItem>
+                <SelectItem value="3">Tier 3</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs text-ink-muted">Caps how much this user can claim per expense category on Payments. Edit the tier amounts from the Payments page.</p>
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
