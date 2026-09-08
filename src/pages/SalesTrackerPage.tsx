@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
-  Phone, User as UserIcon, Clock, Route as RouteIcon, Trash2, Pencil, CalendarClock,
+  Phone, User as UserIcon, Clock, Route as RouteIcon, Trash2, Pencil, CalendarClock, Camera,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -56,6 +56,7 @@ type SiteVisit = {
   contact_person: string | null; contact_phone: string | null; purpose: string | null; notes: string | null;
   trip_status: string; km_start: number | null; km_end: number | null; started_at: string | null; ended_at: string | null;
   trip_group_id: string; stop_order: number; created_at: string; request_id: string | null;
+  km_start_photo_url: string | null; km_end_photo_url: string | null;
 };
 
 type SiteVisitRequest = {
@@ -88,43 +89,84 @@ type SiteStop = {
   notes: string;
 };
 
-/** Start/End Trip controls that act on every stop in the trip group at once. */
-function TripControls({ trip }: { trip: SiteVisit[] }) {
+/** Start/End Trip controls that act on every stop in the trip group at once.
+ * Both actions now require an odometer photo alongside the KM reading —
+ * uploaded to the odometer-photos storage bucket before the site_visits row
+ * is updated. */
+function TripControls({ trip, userId }: { trip: SiteVisit[]; userId: string }) {
   const queryClient = useQueryClient();
   const [kmInput, setKmInput] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [editing, setEditing] = useState<"start" | "end" | null>(null);
+  const [uploading, setUploading] = useState(false);
   const primary = trip[0];
   const tripGroupId = primary.trip_group_id;
 
+  const resetForm = () => {
+    setEditing(null);
+    setKmInput("");
+    setPhotoFile(null);
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoPreview(null);
+  };
+
+  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Photo must be under 5MB"); return; }
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const uploadOdometerPhoto = async (file: File, stage: "start" | "end") => {
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${userId}/${tripGroupId}-${stage}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("odometer-photos").upload(path, file, { upsert: true });
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from("odometer-photos").getPublicUrl(path);
+    return `${data.publicUrl}?t=${Date.now()}`;
+  };
+
   const startTrip = useMutation({
-    mutationFn: async (km: number) => {
+    mutationFn: async ({ km, photo }: { km: number; photo: File }) => {
+      setUploading(true);
+      const photoUrl = await uploadOdometerPhoto(photo, "start");
       const { error } = await supabase.from("site_visits").update({
-        trip_status: "in_progress", km_start: km, started_at: new Date().toISOString(),
+        trip_status: "in_progress", km_start: km, km_start_photo_url: photoUrl, started_at: new Date().toISOString(),
       }).eq("trip_group_id", tripGroupId);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
       toast.success("Visit started — your manager has been notified");
-      setEditing(null); setKmInput("");
+      resetForm();
     },
     onError: () => toast.error("Couldn't start the visit"),
+    onSettled: () => setUploading(false),
   });
 
   const endTrip = useMutation({
-    mutationFn: async (km: number) => {
+    mutationFn: async ({ km, photo }: { km: number; photo: File }) => {
+      setUploading(true);
+      const photoUrl = await uploadOdometerPhoto(photo, "end");
       const { error } = await supabase.from("site_visits").update({
-        trip_status: "completed", km_end: km, ended_at: new Date().toISOString(),
+        trip_status: "completed", km_end: km, km_end_photo_url: photoUrl, ended_at: new Date().toISOString(),
       }).eq("trip_group_id", tripGroupId);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
       toast.success("Visit ended — your manager has been notified");
-      setEditing(null); setKmInput("");
+      resetForm();
     },
     onError: () => toast.error("Couldn't end the visit"),
+    onSettled: () => setUploading(false),
   });
+
+  const busy = startTrip.isPending || endTrip.isPending || uploading;
 
   if (primary.trip_status === "completed") {
     const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
@@ -143,9 +185,11 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
           e.preventDefault();
           const km = parseFloat(kmInput);
           if (isNaN(km) || km < 0) { toast.error("Enter a valid KM reading"); return; }
-          if (editing === "start") startTrip.mutate(km); else endTrip.mutate(km);
+          if (!photoFile) { toast.error("Attach a photo of the odometer reading"); return; }
+          if (editing === "start") startTrip.mutate({ km, photo: photoFile });
+          else endTrip.mutate({ km, photo: photoFile });
         }}
-        className="flex items-center gap-2"
+        className="flex flex-col items-start gap-2 sm:flex-row sm:items-center"
       >
         <Input
           type="number"
@@ -156,8 +200,18 @@ function TripControls({ trip }: { trip: SiteVisit[] }) {
           onChange={(e) => setKmInput(e.target.value)}
           className="h-8 w-32"
         />
-        <Button type="submit" size="sm" disabled={startTrip.isPending || endTrip.isPending}>Confirm</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => { setEditing(null); setKmInput(""); }}>Cancel</Button>
+        <label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-ink-secondary hover:bg-muted">
+          <Camera className="h-3.5 w-3.5" />
+          {photoFile ? "Change photo" : "Odometer photo"}
+          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+        </label>
+        {photoPreview && (
+          <img src={photoPreview} alt="Odometer preview" className="h-8 w-8 rounded object-cover border border-border" />
+        )}
+        <div className="flex items-center gap-2">
+          <Button type="submit" size="sm" disabled={busy}>{busy ? "Saving..." : "Confirm"}</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={resetForm} disabled={busy}>Cancel</Button>
+        </div>
       </form>
     );
   }
@@ -197,10 +251,10 @@ function SiteStopDetails({ visit }: { visit: SiteVisit }) {
 }
 
 function TripCard({
-  trip, ownerName, ownerAvatar, showOwner, onView, onEdit,
+  trip, ownerName, ownerAvatar, showOwner, onView, onEdit, userId,
 }: {
   trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean;
-  onView: () => void; onEdit?: () => void;
+  onView: () => void; onEdit?: () => void; userId?: string;
 }) {
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
@@ -264,7 +318,7 @@ function TripCard({
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
             )}
-            <TripControls trip={trip} />
+            {userId && <TripControls trip={trip} userId={userId} />}
           </div>
         )}
       </div>
@@ -449,6 +503,23 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
               </span>
             )}
           </div>
+
+          {(primary.km_start_photo_url || primary.km_end_photo_url) && (
+            <div className="mb-5 flex gap-3">
+              {primary.km_start_photo_url && (
+                <a href={primary.km_start_photo_url} target="_blank" rel="noreferrer" className="block">
+                  <p className="mb-1 text-xs text-ink-muted">Start odometer</p>
+                  <img src={primary.km_start_photo_url} alt="Start odometer reading" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                </a>
+              )}
+              {primary.km_end_photo_url && (
+                <a href={primary.km_end_photo_url} target="_blank" rel="noreferrer" className="block">
+                  <p className="mb-1 text-xs text-ink-muted">End odometer</p>
+                  <img src={primary.km_end_photo_url} alt="End odometer reading" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                </a>
+              )}
+            </div>
+          )}
 
           <div className="space-y-3">
             {trip.map((visit, index) => (
@@ -773,6 +844,7 @@ export default function SalesTrackerPage() {
                 trip={trip}
                 onView={() => setViewTrip({ trip })}
                 onEdit={() => setEditTrip(trip)}
+                userId={user?.id}
               />
             ))}
           </div>
