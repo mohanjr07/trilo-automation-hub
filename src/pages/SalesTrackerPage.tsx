@@ -663,19 +663,15 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
 }
 
 /**
- * The rep's own requests — pending / approved / rejected. Once a request is
- * approved AND its planned time has arrived, "Start Visit" creates the
+ * The rep's own requests — pending / approved / rejected. As soon as a
+ * request is approved, "Start Visit" is available — it creates the
  * site_visits row (linked back via request_id) and hands off into the usual
- * TripControls flow for ending the visit.
+ * TripControls flow for beginning/ending the visit. planned_at is shown for
+ * reference only; it's no longer a gate on when Start Visit becomes usable.
  */
 function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30 * 1000);
-    return () => clearInterval(id);
-  }, []);
 
   const startFromRequest = useMutation({
     mutationFn: async (req: SiteVisitRequest) => {
@@ -711,7 +707,6 @@ function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
       <div className="space-y-3">
         {requests.map((req) => {
           const meta = REQUEST_META[req.status];
-          const isDue = new Date(req.planned_at).getTime() <= now.getTime();
           const alreadyStarted = !!req.site_visit_id;
           return (
             <div key={req.id} className="rounded-lg border border-border p-4">
@@ -734,12 +729,11 @@ function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
                   <Button
                     size="sm"
                     className="gap-1.5"
-                    disabled={!isDue || startFromRequest.isPending}
+                    disabled={startFromRequest.isPending}
                     onClick={() => startFromRequest.mutate(req)}
-                    title={!isDue ? "You can start this once the planned time arrives" : undefined}
                   >
                     <Play className="h-3.5 w-3.5" />
-                    {isDue ? "Start Visit" : `Available ${format(new Date(req.planned_at), "d MMM, h:mm a")}`}
+                    {startFromRequest.isPending ? "Starting..." : "Start Visit"}
                   </Button>
                 </div>
               )}
