@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
-  Phone, User as UserIcon, Clock, Route as RouteIcon, Trash2, Pencil, CalendarClock, Camera,
+  Phone, User as UserIcon, Clock, Route as RouteIcon, Pencil, CalendarClock,
+  CheckCircle2, ArrowRightCircle, Circle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,6 +15,7 @@ import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import LocationAutocompleteInput from "@/components/LocationAutocompleteInput";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -56,8 +58,26 @@ type SiteVisit = {
   contact_person: string | null; contact_phone: string | null; purpose: string | null; notes: string | null;
   trip_status: string; km_start: number | null; km_end: number | null; started_at: string | null; ended_at: string | null;
   trip_group_id: string; stop_order: number; created_at: string; request_id: string | null;
-  km_start_photo_url: string | null; km_end_photo_url: string | null;
+  arrived_at: string | null; departed_at: string | null;
+  start_latitude: number | null; start_longitude: number | null;
+  end_latitude: number | null; end_longitude: number | null;
+  arrived_latitude: number | null; arrived_longitude: number | null;
+  departed_latitude: number | null; departed_longitude: number | null;
 };
+
+/** Wraps the browser Geolocation API in a promise. Resolves to null (rather
+ * than throwing) if location isn't available/permitted — the check-in still
+ * goes through, it just won't have coordinates attached. */
+function getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+}
 
 type SiteVisitRequest = {
   id: string; user_id: string; site_name: string; location: string;
@@ -89,84 +109,110 @@ type SiteStop = {
   notes: string;
 };
 
-/** Start/End Trip controls that act on every stop in the trip group at once.
- * Both actions now require an odometer photo alongside the KM reading —
- * uploaded to the odometer-photos storage bucket before the site_visits row
- * is updated. */
-function TripControls({ trip, userId }: { trip: SiteVisit[]; userId: string }) {
+/**
+ * Trip controls for a multi-stop trip (e.g. Office -> Client B -> Office):
+ *
+ *   not_started  --Begin Visit (start KM)-->  in_progress
+ *   in_progress: for the first stop that hasn't been departed yet —
+ *     no arrived_at  --Arrived at <site>-->  arrived_at set
+ *     arrived_at set --Departure from <site>-->  departed_at set, advances
+ *                                                 to the next stop
+ *   once every stop has departed_at set  --End Visit (end KM)-->  completed
+ *
+ * started_at/ended_at/km_start/km_end/trip_status are trip-wide (bulk
+ * update across trip_group_id); arrived_at/departed_at are per stop.
+ */
+function TripControls({ trip }: { trip: SiteVisit[] }) {
   const queryClient = useQueryClient();
   const [kmInput, setKmInput] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [editing, setEditing] = useState<"start" | "end" | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [editingKm, setEditingKm] = useState<"start" | "end" | null>(null);
   const primary = trip[0];
   const tripGroupId = primary.trip_group_id;
 
-  const resetForm = () => {
-    setEditing(null);
-    setKmInput("");
-    setPhotoFile(null);
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoPreview(null);
-  };
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
 
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
-    if (file.size > 5 * 1024 * 1024) { toast.error("Photo must be under 5MB"); return; }
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
-  };
-
-  const uploadOdometerPhoto = async (file: File, stage: "start" | "end") => {
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `${userId}/${tripGroupId}-${stage}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from("odometer-photos").upload(path, file, { upsert: true });
-    if (uploadError) throw uploadError;
-    const { data } = supabase.storage.from("odometer-photos").getPublicUrl(path);
-    return `${data.publicUrl}?t=${Date.now()}`;
-  };
-
-  const startTrip = useMutation({
-    mutationFn: async ({ km, photo }: { km: number; photo: File }) => {
-      setUploading(true);
-      const photoUrl = await uploadOdometerPhoto(photo, "start");
+  const beginTrip = useMutation({
+    mutationFn: async (km: number) => {
+      // Capture where the rep actually is at check-in, alongside the time.
+      const position = await getCurrentPosition();
       const { error } = await supabase.from("site_visits").update({
-        trip_status: "in_progress", km_start: km, km_start_photo_url: photoUrl, started_at: new Date().toISOString(),
+        trip_status: "in_progress",
+        km_start: km,
+        started_at: new Date().toISOString(),
+        start_latitude: position?.lat ?? null,
+        start_longitude: position?.lng ?? null,
       }).eq("trip_group_id", tripGroupId);
       if (error) throw error;
+      return position;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Visit started — your manager has been notified");
-      resetForm();
+    onSuccess: (position) => {
+      invalidate();
+      toast.success(
+        position
+          ? "Visit started — your location and time were recorded, and your manager has been notified"
+          : "Visit started — your manager has been notified (location wasn't available; check your browser's location permission)"
+      );
+      setEditingKm(null); setKmInput("");
     },
     onError: () => toast.error("Couldn't start the visit"),
-    onSettled: () => setUploading(false),
   });
 
   const endTrip = useMutation({
-    mutationFn: async ({ km, photo }: { km: number; photo: File }) => {
-      setUploading(true);
-      const photoUrl = await uploadOdometerPhoto(photo, "end");
+    mutationFn: async (km: number) => {
+      const position = await getCurrentPosition();
       const { error } = await supabase.from("site_visits").update({
-        trip_status: "completed", km_end: km, km_end_photo_url: photoUrl, ended_at: new Date().toISOString(),
+        trip_status: "completed",
+        km_end: km,
+        ended_at: new Date().toISOString(),
+        end_latitude: position?.lat ?? null,
+        end_longitude: position?.lng ?? null,
       }).eq("trip_group_id", tripGroupId);
       if (error) throw error;
+      return position;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Visit ended — your manager has been notified");
-      resetForm();
+    onSuccess: (position) => {
+      invalidate();
+      toast.success(position ? "Visit ended — your location and time were recorded" : "Visit ended — location wasn't available");
+      setEditingKm(null); setKmInput("");
     },
     onError: () => toast.error("Couldn't end the visit"),
-    onSettled: () => setUploading(false),
   });
 
-  const busy = startTrip.isPending || endTrip.isPending || uploading;
+  const markArrived = useMutation({
+    mutationFn: async (stopId: string) => {
+      const position = await getCurrentPosition();
+      const { error } = await supabase.from("site_visits").update({
+        arrived_at: new Date().toISOString(),
+        arrived_latitude: position?.lat ?? null,
+        arrived_longitude: position?.lng ?? null,
+      }).eq("id", stopId);
+      if (error) throw error;
+      return position;
+    },
+    onSuccess: (position) => {
+      invalidate();
+      toast.success(position ? "Marked as arrived — location recorded" : "Marked as arrived — location wasn't available");
+    },
+    onError: () => toast.error("Couldn't update"),
+  });
+
+  const markDeparted = useMutation({
+    mutationFn: async (stopId: string) => {
+      const position = await getCurrentPosition();
+      const { error } = await supabase.from("site_visits").update({
+        departed_at: new Date().toISOString(),
+        departed_latitude: position?.lat ?? null,
+        departed_longitude: position?.lng ?? null,
+      }).eq("id", stopId);
+      if (error) throw error;
+      return position;
+    },
+    onSuccess: (position) => {
+      invalidate();
+      toast.success(position ? "Marked as departed — location recorded" : "Marked as departed — location wasn't available");
+    },
+    onError: () => toast.error("Couldn't update"),
+  });
 
   if (primary.trip_status === "completed") {
     const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
@@ -178,66 +224,121 @@ function TripControls({ trip, userId }: { trip: SiteVisit[]; userId: string }) {
     );
   }
 
-  if (editing) {
+  if (editingKm) {
     return (
       <form
         onSubmit={(e) => {
           e.preventDefault();
           const km = parseFloat(kmInput);
           if (isNaN(km) || km < 0) { toast.error("Enter a valid KM reading"); return; }
-          if (!photoFile) { toast.error("Attach a photo of the odometer reading"); return; }
-          if (editing === "start") startTrip.mutate({ km, photo: photoFile });
-          else endTrip.mutate({ km, photo: photoFile });
+          if (editingKm === "start") beginTrip.mutate(km); else endTrip.mutate(km);
         }}
-        className="flex flex-col items-start gap-2 sm:flex-row sm:items-center"
+        className="flex items-center gap-2"
       >
         <Input
           type="number"
           step="0.1"
           autoFocus
-          placeholder={editing === "start" ? "Starting KM" : "Ending KM"}
+          placeholder={editingKm === "start" ? "Starting KM" : "Ending KM"}
           value={kmInput}
           onChange={(e) => setKmInput(e.target.value)}
           className="h-8 w-32"
         />
-        <label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-ink-secondary hover:bg-muted">
-          <Camera className="h-3.5 w-3.5" />
-          {photoFile ? "Change photo" : "Odometer photo"}
-          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
-        </label>
-        {photoPreview && (
-          <img src={photoPreview} alt="Odometer preview" className="h-8 w-8 rounded object-cover border border-border" />
-        )}
-        <div className="flex items-center gap-2">
-          <Button type="submit" size="sm" disabled={busy}>{busy ? "Saving..." : "Confirm"}</Button>
-          <Button type="button" size="sm" variant="ghost" onClick={resetForm} disabled={busy}>Cancel</Button>
-        </div>
+        <Button type="submit" size="sm" disabled={beginTrip.isPending || endTrip.isPending}>
+          {beginTrip.isPending || endTrip.isPending ? "Getting location..." : "Confirm"}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => { setEditingKm(null); setKmInput(""); }}>Cancel</Button>
       </form>
     );
   }
 
   if (primary.trip_status === "not_started") {
     return (
-      <Button size="sm" onClick={() => setEditing("start")} className="gap-1.5">
-        <Play className="h-3.5 w-3.5" /> Start Visit
+      <Button size="sm" onClick={() => setEditingKm("start")} className="gap-1.5">
+        <Play className="h-3.5 w-3.5" /> Begin Visit
       </Button>
     );
   }
 
+  // in_progress — find the first stop that hasn't departed yet.
+  const currentStop = trip.find((s) => !s.departed_at);
+
+  if (currentStop) {
+    if (!currentStop.arrived_at) {
+      return (
+        <Button size="sm" onClick={() => markArrived.mutate(currentStop.id)} disabled={markArrived.isPending} className="gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {markArrived.isPending ? "Getting location..." : `Arrived at ${currentStop.site_name}`}
+        </Button>
+      );
+    }
+    return (
+      <Button size="sm" variant="outline" onClick={() => markDeparted.mutate(currentStop.id)} disabled={markDeparted.isPending} className="gap-1.5">
+        <ArrowRightCircle className="h-3.5 w-3.5" />
+        {markDeparted.isPending ? "Getting location..." : `Departure from ${currentStop.site_name}`}
+      </Button>
+    );
+  }
+
+  // Every stop has been departed from — trip is ready to close out.
   return (
     <div className="flex items-center gap-3">
       {primary.km_start != null && <span className="text-xs text-ink-muted">Start KM: {primary.km_start}</span>}
-      <Button size="sm" variant="destructive" onClick={() => setEditing("end")} className="gap-1.5">
+      <Button size="sm" variant="destructive" onClick={() => setEditingKm("end")} className="gap-1.5">
         <Square className="h-3.5 w-3.5" /> End Visit
       </Button>
     </div>
   );
 }
 
+/** Small "open in Maps" link, shown next to a timestamp when coordinates were captured. */
+function MapLink({ lat, lng }: { lat: number | null; lng: number | null }) {
+  if (lat == null || lng == null) return null;
+  return (
+    <a
+      href={`https://www.google.com/maps?q=${lat},${lng}`}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="text-primary hover:underline"
+      title="Open location in Maps"
+    >
+      (map)
+    </a>
+  );
+}
+
+function StopProgressBadge({ visit }: { visit: SiteVisit }) {
+  if (visit.departed_at) {
+    return (
+      <span className="flex items-center gap-1 rounded-full bg-success-light px-2 py-0.5 text-[10px] font-medium text-success">
+        <CheckCircle2 className="h-3 w-3" /> Departed {format(new Date(visit.departed_at), "h:mm a")}
+        <MapLink lat={visit.departed_latitude} lng={visit.departed_longitude} />
+      </span>
+    );
+  }
+  if (visit.arrived_at) {
+    return (
+      <span className="flex items-center gap-1 rounded-full bg-warning-light px-2 py-0.5 text-[10px] font-medium text-warning">
+        <MapPin className="h-3 w-3" /> Arrived {format(new Date(visit.arrived_at), "h:mm a")}
+        <MapLink lat={visit.arrived_latitude} lng={visit.arrived_longitude} />
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-ink-muted">
+      <Circle className="h-3 w-3" /> Pending
+    </span>
+  );
+}
+
 function SiteStopDetails({ visit }: { visit: SiteVisit }) {
   return (
     <div>
-      <p className="text-sm font-medium text-ink-primary">{visit.site_name}</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <p className="text-sm font-medium text-ink-primary">{visit.site_name}</p>
+        <StopProgressBadge visit={visit} />
+      </div>
       <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {visit.location}</p>
       {(visit.contact_person || visit.contact_phone) && (
         <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
@@ -251,10 +352,10 @@ function SiteStopDetails({ visit }: { visit: SiteVisit }) {
 }
 
 function TripCard({
-  trip, ownerName, ownerAvatar, showOwner, onView, onEdit, userId,
+  trip, ownerName, ownerAvatar, showOwner, onView, onEdit,
 }: {
   trip: SiteVisit[]; ownerName?: string; ownerAvatar?: string | null; showOwner?: boolean;
-  onView: () => void; onEdit?: () => void; userId?: string;
+  onView: () => void; onEdit?: () => void;
 }) {
   const primary = trip[0];
   const meta = TRIP_META[primary.trip_status] ?? TRIP_META.not_started;
@@ -318,7 +419,7 @@ function TripCard({
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </button>
             )}
-            {userId && <TripControls trip={trip} userId={userId} />}
+            <TripControls trip={trip} />
           </div>
         )}
       </div>
@@ -417,7 +518,7 @@ function EditVisitModal({ trip, onClose }: { trip: SiteVisit[] | null; onClose: 
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-ink-primary">Location / Address *</label>
-                  <Input value={stop.location} onChange={(e) => updateStop(index, { location: e.target.value })} />
+                  <LocationAutocompleteInput value={stop.location} onChange={(v) => updateStop(index, { location: v })} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -497,35 +598,41 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
                 <Clock className="h-3 w-3" /> Started {format(new Date(primary.started_at), "h:mm a")}
               </span>
             )}
+            {primary.start_latitude != null && primary.start_longitude != null && (
+              <a
+                href={`https://www.google.com/maps?q=${primary.start_latitude},${primary.start_longitude}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <MapPin className="h-3 w-3" /> Check-in location
+              </a>
+            )}
             {primary.ended_at && (
               <span className="flex items-center gap-1 text-xs text-ink-muted">
                 <Clock className="h-3 w-3" /> Ended {format(new Date(primary.ended_at), "h:mm a")}
               </span>
             )}
+            {primary.end_latitude != null && primary.end_longitude != null && (
+              <a
+                href={`https://www.google.com/maps?q=${primary.end_latitude},${primary.end_longitude}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <MapPin className="h-3 w-3" /> Check-out location
+              </a>
+            )}
           </div>
-
-          {(primary.km_start_photo_url || primary.km_end_photo_url) && (
-            <div className="mb-5 flex gap-3">
-              {primary.km_start_photo_url && (
-                <a href={primary.km_start_photo_url} target="_blank" rel="noreferrer" className="block">
-                  <p className="mb-1 text-xs text-ink-muted">Start odometer</p>
-                  <img src={primary.km_start_photo_url} alt="Start odometer reading" className="h-20 w-20 rounded-lg border border-border object-cover" />
-                </a>
-              )}
-              {primary.km_end_photo_url && (
-                <a href={primary.km_end_photo_url} target="_blank" rel="noreferrer" className="block">
-                  <p className="mb-1 text-xs text-ink-muted">End odometer</p>
-                  <img src={primary.km_end_photo_url} alt="End odometer reading" className="h-20 w-20 rounded-lg border border-border object-cover" />
-                </a>
-              )}
-            </div>
-          )}
 
           <div className="space-y-3">
             {trip.map((visit, index) => (
               <div key={visit.id} className="rounded-lg border border-border p-4">
-                {trip.length > 1 && <p className="mb-1 text-xs font-semibold text-ink-muted">Site {index + 1}</p>}
-                <p className="text-sm font-medium text-ink-primary">{visit.site_name}</p>
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  {trip.length > 1 && <p className="text-xs font-semibold text-ink-muted">Site {index + 1}</p>}
+                  <StopProgressBadge visit={visit} />
+                </div>
+                <p className="mt-1 text-sm font-medium text-ink-primary">{visit.site_name}</p>
                 <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {visit.location}</p>
                 {(visit.contact_person || visit.contact_phone) && (
                   <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
@@ -535,6 +642,13 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
                 )}
                 {visit.purpose && <p className="mt-0.5 text-xs text-ink-muted">Purpose: {visit.purpose}</p>}
                 {visit.notes && <p className="mt-0.5 text-xs text-ink-muted">Notes: {visit.notes}</p>}
+                {(visit.arrived_at || visit.departed_at) && (
+                  <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
+                    <Clock className="h-3 w-3" />
+                    {visit.arrived_at && `Arrived ${format(new Date(visit.arrived_at), "h:mm a")}`}
+                    {visit.departed_at && ` · Departed ${format(new Date(visit.departed_at), "h:mm a")}`}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -844,7 +958,6 @@ export default function SalesTrackerPage() {
                 trip={trip}
                 onView={() => setViewTrip({ trip })}
                 onEdit={() => setEditTrip(trip)}
-                userId={user?.id}
               />
             ))}
           </div>
