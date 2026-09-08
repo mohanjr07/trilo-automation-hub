@@ -14,7 +14,7 @@ import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -23,18 +23,22 @@ const BUCKET = "payment-receipts";
 type Project = { id: string; name: string };
 
 // "Expense category" is no longer a fixed set — admins can add their own
-// from the Expense tier limits panel (see ExpenseTierLimitsPanel below).
-// "food"/"travel"/"accommodation"/"petrol"/"other" are the built-in keys
-// seeded by the database and can't be removed; "petrol" is the only key
-// with special behavior (the Total KM field) and "other" is the only key
-// with no tier limit (free manual entry).
+// from the Expense limits panel (see ExpenseTierLimitsPanel below).
+// Built-in categories are grouped into two sections — "TTA (Tour Travel
+// Allowance)" and "Local Conveyance" — each with its own Food / Travel /
+// Accommodation / Petrol line item (group_key/group_label). "other" and
+// any custom category an admin adds are ungrouped (group_key null) and
+// listed on their own, outside either section.
 type ExpenseCategory = string;
-// rate_unit_label: null = flat max amount cap (unchanged). "meal" or "km"
-// = the tier limit is a per-unit RATE, and the allowed amount for a
-// request is rate × units (meal_count or petrol_km) — set on the two
-// built-ins (Food, Petrol) via migration; any custom category an admin
-// adds is flat by default.
-type ExpenseCategoryDef = { key: ExpenseCategory; label: string; is_builtin: boolean; sort_order: number; rate_unit_label: "meal" | "km" | null };
+// rate_unit_label: null = flat max amount cap. "meal" or "km" = the tier
+// limit is a per-unit RATE, and the allowed amount for a request is
+// rate × units (meal_count or petrol_km) — set on the Food/Petrol line
+// item in each section via migration; any custom category an admin adds
+// is flat by default.
+type ExpenseCategoryDef = {
+  key: ExpenseCategory; label: string; is_builtin: boolean; sort_order: number;
+  rate_unit_label: "meal" | "km" | null; group_key: string | null; group_label: string | null;
+};
 
 type TierLimit = { tier: 1 | 2 | 3; category: ExpenseCategory; max_amount: number | null };
 
@@ -74,8 +78,11 @@ const STATUS_META: Record<PaymentRequest["status"], { label: string; bg: string;
 const formatAmount = (n: number) =>
   n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const categoryLabel = (categories: ExpenseCategoryDef[], key: string | null) =>
-  (key && categories.find((c) => c.key === key)?.label) || key || "—";
+const categoryLabel = (categories: ExpenseCategoryDef[], key: string | null) => {
+  const c = key ? categories.find((c) => c.key === key) : undefined;
+  if (!c) return key || "—";
+  return c.group_label ? `${c.group_label} – ${c.label}` : c.label;
+};
 
 function StatusBadge({ status }: { status: PaymentRequest["status"] }) {
   const meta = STATUS_META[status];
@@ -106,6 +113,27 @@ function RequestPaymentModal({
   const [submitting, setSubmitting] = useState(false);
 
   const isOtherProject = projectId === "__other__";
+
+  // Split the flat categories list into the two sections (TTA / Local
+  // Conveyance) plus whatever's ungrouped (Others, and any custom
+  // category an admin adds), for the grouped dropdown below.
+  const groupedCategories = useMemo(() => {
+    const groupOrder: { key: string; label: string }[] = [];
+    const byGroup: Record<string, ExpenseCategoryDef[]> = {};
+    const ungrouped: ExpenseCategoryDef[] = [];
+    for (const c of categories) {
+      if (c.group_key) {
+        if (!byGroup[c.group_key]) {
+          byGroup[c.group_key] = [];
+          groupOrder.push({ key: c.group_key, label: c.group_label ?? c.group_key });
+        }
+        byGroup[c.group_key].push(c);
+      } else {
+        ungrouped.push(c);
+      }
+    }
+    return { groups: groupOrder.map((g) => ({ ...g, items: byGroup[g.key] })), ungrouped };
+  }, [categories]);
 
   // Is the picked category rate-based (Food = ₹/meal, Petrol = ₹/km)?
   const rateUnitLabel = useMemo(
@@ -177,11 +205,11 @@ function RequestPaymentModal({
     }
     if (paymentFor === "project" && isOtherProject && !manualProjectName.trim()) { toast.error("Type the project name"); return; }
     if (paymentFor === "expense" && !category) { toast.error("Select an expense category"); return; }
-    if (paymentFor === "expense" && category === "petrol" && (!petrolKm || parseFloat(petrolKm) <= 0)) {
+    if (paymentFor === "expense" && rateUnitLabel === "km" && (!petrolKm || parseFloat(petrolKm) <= 0)) {
       toast.error("Enter the total KM for petrol");
       return;
     }
-    if (paymentFor === "expense" && category === "food" && (!mealCount || parseFloat(mealCount) <= 0)) {
+    if (paymentFor === "expense" && rateUnitLabel === "meal" && (!mealCount || parseFloat(mealCount) <= 0)) {
       toast.error("Enter the number of meals");
       return;
     }
@@ -207,8 +235,8 @@ function RequestPaymentModal({
         project_id: paymentFor === "project" && !isOtherProject && projectId ? projectId : null,
         project_name: paymentFor === "project" && isOtherProject ? manualProjectName.trim() : null,
         expense_category: paymentFor === "expense" ? category : null,
-        petrol_km: paymentFor === "expense" && category === "petrol" ? parseFloat(petrolKm) : null,
-        meal_count: paymentFor === "expense" && category === "food" ? parseFloat(mealCount) : null,
+        petrol_km: paymentFor === "expense" && rateUnitLabel === "km" ? parseFloat(petrolKm) : null,
+        meal_count: paymentFor === "expense" && rateUnitLabel === "meal" ? parseFloat(mealCount) : null,
         purpose: purpose.trim(),
         amount: amountNum,
         bill_file_path: path,
@@ -297,10 +325,16 @@ function RequestPaymentModal({
                   <Select value={category || undefined} onValueChange={(v) => { setCategory(v as ExpenseCategory); setPetrolKm(""); setMealCount(""); }}>
                     <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
                     <SelectContent>
-                      {categories.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
+                      {groupedCategories.groups.map((g) => (
+                        <SelectGroup key={g.key}>
+                          <SelectLabel>{g.label}</SelectLabel>
+                          {g.items.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
+                        </SelectGroup>
+                      ))}
+                      {groupedCategories.ungrouped.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  {category === "petrol" && (
+                  {rateUnitLabel === "km" && (
                     <div className="mt-2">
                       <label className="mb-1.5 block text-sm font-medium text-ink-primary">Total KM *</label>
                       <Input
@@ -311,7 +345,7 @@ function RequestPaymentModal({
                       />
                     </div>
                   )}
-                  {category === "food" && (
+                  {rateUnitLabel === "meal" && (
                     <div className="mt-2">
                       <label className="mb-1.5 block text-sm font-medium text-ink-primary">Number of meals *</label>
                       <Input
@@ -488,10 +522,10 @@ function PaymentDetailModal({
                   : (request.project_name ?? "—")}
               </p>
             </div>
-            {request.payment_for === "expense" && request.expense_category === "petrol" && request.petrol_km != null && (
+            {request.payment_for === "expense" && request.petrol_km != null && (
               <div><p className="text-xs font-medium text-ink-muted">Total KM</p><p className="text-sm text-ink-primary">{request.petrol_km}</p></div>
             )}
-            {request.payment_for === "expense" && request.expense_category === "food" && request.meal_count != null && (
+            {request.payment_for === "expense" && request.meal_count != null && (
               <div><p className="text-xs font-medium text-ink-muted">Meals</p><p className="text-sm text-ink-primary">{request.meal_count}</p></div>
             )}
             <div><p className="text-xs font-medium text-ink-muted">Purpose</p><p className="text-sm text-ink-primary">{request.purpose}</p></div>
@@ -613,7 +647,7 @@ export default function PaymentsPage() {
   const { data: categories = [] } = useQuery({
     queryKey: ["expense-categories"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("expense_categories").select("key, label, is_builtin, sort_order, rate_unit_label").order("sort_order");
+      const { data, error } = await supabase.from("expense_categories").select("key, label, is_builtin, sort_order, rate_unit_label, group_key, group_label").order("sort_order");
       if (error) throw error;
       return (data ?? []) as ExpenseCategoryDef[];
     },
@@ -734,6 +768,22 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
   // capped on. Limits are the same for everyone (no more per-user tiers),
   // so under the hood this always reads/writes the tier = 1 row.
   const categories = allCategories.filter((c) => c.key !== "other");
+  // Split into the two sections (TTA / Local Conveyance) plus whatever's
+  // ungrouped (any custom category an admin adds without a section).
+  const sections = useMemo(() => {
+    const order: { key: string; label: string }[] = [];
+    const byGroup: Record<string, ExpenseCategoryDef[]> = {};
+    const ungrouped: ExpenseCategoryDef[] = [];
+    for (const c of categories) {
+      if (c.group_key) {
+        if (!byGroup[c.group_key]) { byGroup[c.group_key] = []; order.push({ key: c.group_key, label: c.group_label ?? c.group_key }); }
+        byGroup[c.group_key].push(c);
+      } else {
+        ungrouped.push(c);
+      }
+    }
+    return { groups: order.map((g) => ({ ...g, items: byGroup[g.key] })), ungrouped };
+  }, [categories]);
   const TIER = 1 as const;
   const [newCategoryName, setNewCategoryName] = useState("");
   const [addingCategory, setAddingCategory] = useState(false);
@@ -805,55 +855,100 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
       <p className="mb-4 text-xs text-ink-muted">
         Maximum claimable amount per category — the same for every requester. Food and Petrol are a rate per meal / per km (multiplied by the meals or KM entered on the request); other categories are a flat cap. Leave a cell blank for no limit.
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[420px] text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
-              <th className="py-2 pr-3">Category</th>
-              <th className="py-2 pr-3">Limit</th>
-              <th className="py-2 pr-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((c) => (
-              <tr key={c.key} className="border-b border-border last:border-0">
-                <td className="py-2 pr-3 font-medium text-ink-primary">
-                  {c.label}
-                  {c.rate_unit_label && (
-                    <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
-                  )}
-                </td>
-                <td className="py-2 pr-3">
-                  <Input
-                    type="number" min="0" step="0.01"
-                    className="h-9 w-28"
-                    placeholder="No limit"
-                    title={c.rate_unit_label ? `₹ per ${c.rate_unit_label}` : "Flat max amount"}
-                    value={displayValue(c.key)}
-                    onChange={(e) => setEdits((prev) => ({ ...prev, [c.key]: e.target.value }))}
-                  />
-                </td>
-                <td className="py-2 pr-3">
-                  {!c.is_builtin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Remove the "${c.label}" category? Existing requests keep it, but it won't be pickable anymore.`)) {
-                          removeCategory.mutate(c.key);
-                        }
-                      }}
-                      className="text-xs text-destructive hover:underline"
-                      disabled={removeCategory.isPending}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {sections.groups.map((g) => (
+        <div key={g.key} className="mb-5">
+          <h3 className="mb-2 text-sm font-semibold text-ink-primary">{g.label}</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
+                  <th className="py-2 pr-3">Category</th>
+                  <th className="py-2 pr-3">Limit</th>
+                  <th className="py-2 pr-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {g.items.map((c) => (
+                  <tr key={c.key} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-3 font-medium text-ink-primary">
+                      {c.label}
+                      {c.rate_unit_label && (
+                        <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Input
+                        type="number" min="0" step="0.01"
+                        className="h-9 w-28"
+                        placeholder="No limit"
+                        title={c.rate_unit_label ? `₹ per ${c.rate_unit_label}` : "Flat max amount"}
+                        value={displayValue(c.key)}
+                        onChange={(e) => setEdits((prev) => ({ ...prev, [c.key]: e.target.value }))}
+                      />
+                    </td>
+                    <td className="py-2 pr-3" />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      {sections.ungrouped.length > 0 && (
+        <div>
+          {sections.groups.length > 0 && <h3 className="mb-2 text-sm font-semibold text-ink-primary">Other categories</h3>}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
+                  <th className="py-2 pr-3">Category</th>
+                  <th className="py-2 pr-3">Limit</th>
+                  <th className="py-2 pr-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {sections.ungrouped.map((c) => (
+                  <tr key={c.key} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-3 font-medium text-ink-primary">
+                      {c.label}
+                      {c.rate_unit_label && (
+                        <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Input
+                        type="number" min="0" step="0.01"
+                        className="h-9 w-28"
+                        placeholder="No limit"
+                        title={c.rate_unit_label ? `₹ per ${c.rate_unit_label}` : "Flat max amount"}
+                        value={displayValue(c.key)}
+                        onChange={(e) => setEdits((prev) => ({ ...prev, [c.key]: e.target.value }))}
+                      />
+                    </td>
+                    <td className="py-2 pr-3">
+                      {!c.is_builtin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Remove the "${c.label}" category? Existing requests keep it, but it won't be pickable anymore.`)) {
+                              removeCategory.mutate(c.key);
+                            }
+                          }}
+                          className="text-xs text-destructive hover:underline"
+                          disabled={removeCategory.isPending}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {addingCategory ? (
         <div className="mt-4 flex flex-wrap items-center gap-2">
