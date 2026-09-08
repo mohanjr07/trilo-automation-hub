@@ -9,7 +9,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import UserAvatar from "@/components/UserAvatar";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/ThemeToggle";
-import DailyStatusModal from "@/components/DailyStatusModal";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { cn } from "@/lib/utils";
 
@@ -377,7 +376,6 @@ export default function AppLayout() {
         </button>
       </div>
 
-      <DailyStatusModal />
     </div>
   );
 }
