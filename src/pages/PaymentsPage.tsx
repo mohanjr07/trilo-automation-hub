@@ -140,17 +140,21 @@ function RequestPaymentModal({ open, onClose, projects }: { open: boolean; onClo
             </div>
 
             <form onSubmit={submit} className="space-y-4">
-              {projects.length > 0 && (
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Project</label>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Project</label>
+                {projects.length > 0 ? (
                   <Select value={projectId || undefined} onValueChange={setProjectId}>
                     <SelectTrigger><SelectValue placeholder="Select a project (optional)" /></SelectTrigger>
                     <SelectContent>
                       {projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                </div>
-              )}
+                ) : (
+                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-ink-muted">
+                    No active projects found — the request can still be submitted without one.
+                  </p>
+                )}
+              </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Purpose / Description *</label>
                 <Textarea value={purpose} onChange={(e) => setPurpose(e.target.value)} rows={3} placeholder="What is this payment for?" autoFocus />
@@ -369,10 +373,15 @@ export default function PaymentsPage() {
   const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
   const isAccountant = (profile?.department ?? "").trim().toLowerCase() === "accountant";
 
+  // Uses a SECURITY DEFINER RPC rather than a direct `.from("projects")`
+  // select — the projects table's own RLS only lets a user read projects
+  // they're a member of (or all, if admin), but anyone should be able to
+  // name any active project on a payment request regardless of team
+  // membership. The RPC exposes only id + name, nothing else.
   const { data: projects = [] } = useQuery({
     queryKey: ["payments-projects"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("projects").select("id, name").eq("status", "active").order("name");
+      const { data, error } = await supabase.rpc("list_active_projects_for_payment_requests");
       if (error) throw error;
       return (data ?? []) as Project[];
     },
