@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, CheckSquare, Users, Calendar, BarChart3,
-  Settings, User, Bell, LogOut, Menu, X, Video, StickyNote, ClipboardList, FolderKanban, Network, Boxes, Target, FileText, Workflow, Route as RouteIcon,
+  Settings, User, Bell, LogOut, Menu, X, Video, StickyNote, ClipboardList, FolderKanban, Network, Boxes, Target, FileText, Workflow, Route as RouteIcon, Wallet,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import UserAvatar from "@/components/UserAvatar";
@@ -25,6 +25,7 @@ const adminNav: NavItem[] = [
   { label: "Users", path: "/users", icon: Users },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "Leave", path: "/leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
@@ -43,6 +44,7 @@ const superAdminNav: NavItem[] = [
   { label: "Users", path: "/users", icon: Users },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
@@ -61,6 +63,7 @@ const managerNav: NavItem[] = [
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "My Leave", path: "/my-leave", icon: Calendar },
@@ -79,6 +82,7 @@ const employeeNav: NavItem[] = [
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "Leave", path: "/my-leave", icon: Calendar },
   { label: "Notes", path: "/notes", icon: StickyNote },
@@ -93,6 +97,7 @@ const internNav: NavItem[] = [
   { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Notes", path: "/notes", icon: StickyNote },
   { label: "Profile", path: "/profile", icon: User },
 ];
