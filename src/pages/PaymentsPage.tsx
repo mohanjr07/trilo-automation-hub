@@ -29,7 +29,12 @@ type Project = { id: string; name: string };
 // with special behavior (the Total KM field) and "other" is the only key
 // with no tier limit (free manual entry).
 type ExpenseCategory = string;
-type ExpenseCategoryDef = { key: ExpenseCategory; label: string; is_builtin: boolean; sort_order: number };
+// rate_unit_label: null = flat max amount cap (unchanged). "meal" or "km"
+// = the tier limit is a per-unit RATE, and the allowed amount for a
+// request is rate × units (meal_count or petrol_km) — set on the two
+// built-ins (Food, Petrol) via migration; any custom category an admin
+// adds is flat by default.
+type ExpenseCategoryDef = { key: ExpenseCategory; label: string; is_builtin: boolean; sort_order: number; rate_unit_label: "meal" | "km" | null };
 
 type TierLimit = { tier: 1 | 2 | 3; category: ExpenseCategory; max_amount: number | null };
 
@@ -42,6 +47,7 @@ type PaymentRequest = {
   project_name: string | null;
   expense_category: ExpenseCategory | null;
   petrol_km: number | null;
+  meal_count: number | null;
   purpose: string;
   amount: number;
   bill_file_path: string;
@@ -93,6 +99,7 @@ function RequestPaymentModal({
   const [manualProjectName, setManualProjectName] = useState("");
   const [category, setCategory] = useState<ExpenseCategory | "">("");
   const [petrolKm, setPetrolKm] = useState("");
+  const [mealCount, setMealCount] = useState("");
   const [purpose, setPurpose] = useState("");
   const [amount, setAmount] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -100,14 +107,38 @@ function RequestPaymentModal({
 
   const isOtherProject = projectId === "__other__";
 
-  // The requester's own tier's max for the picked category — null/undefined
-  // means "no cap" (either the user has no tier assigned yet, or the admin
-  // hasn't set a limit for this tier/category yet).
+  // Is the picked category rate-based (Food = ₹/meal, Petrol = ₹/km)?
+  const rateUnitLabel = useMemo(
+    () => (category ? categories.find((c) => c.key === category)?.rate_unit_label ?? null : null),
+    [category, categories]
+  );
+
+  // The common max for the picked category (same for every requester —
+  // there's no per-user tier anymore) — null/undefined means "no cap"
+  // (either the admin hasn't set a limit for this category yet, or — for
+  // a rate-based category — the unit count (meals/km) hasn't been entered
+  // yet). For a rate-based category this is the RATE × units.
   const capForCategory = useMemo(() => {
-    if (!profile?.expense_tier || !category || category === "other") return null;
-    const row = tierLimits.find((t) => t.tier === profile.expense_tier && t.category === category);
+    if (!category || category === "other") return null;
+    const row = tierLimits.find((t) => t.category === category);
+    if (row?.max_amount == null) return null;
+    if (rateUnitLabel === "meal") {
+      const units = parseFloat(mealCount);
+      return !isNaN(units) && units > 0 ? row.max_amount * units : null;
+    }
+    if (rateUnitLabel === "km") {
+      const units = parseFloat(petrolKm);
+      return !isNaN(units) && units > 0 ? row.max_amount * units : null;
+    }
+    return row.max_amount;
+  }, [category, tierLimits, rateUnitLabel, mealCount, petrolKm]);
+
+  // The raw per-unit rate itself, for display before units are entered.
+  const rateForCategory = useMemo(() => {
+    if (!category || !rateUnitLabel) return null;
+    const row = tierLimits.find((t) => t.category === category);
     return row?.max_amount ?? null;
-  }, [profile?.expense_tier, category, tierLimits]);
+  }, [category, tierLimits, rateUnitLabel]);
 
   const reset = () => {
     setPaymentFor("project");
@@ -115,6 +146,7 @@ function RequestPaymentModal({
     setManualProjectName("");
     setCategory("");
     setPetrolKm("");
+    setMealCount("");
     setPurpose("");
     setAmount("");
     setFile(null);
@@ -126,7 +158,7 @@ function RequestPaymentModal({
     if (capForCategory != null) {
       const n = parseFloat(v);
       if (!isNaN(n) && n > capForCategory) {
-        toast.error(`Capped at your Tier ${profile?.expense_tier} limit for ${categoryLabel(categories, category)}: ₹${formatAmount(capForCategory)}`);
+        toast.error(`Capped at the limit for ${categoryLabel(categories, category)}: ₹${formatAmount(capForCategory)}`);
         setAmount(String(capForCategory));
         return;
       }
@@ -140,13 +172,17 @@ function RequestPaymentModal({
     if (!purpose.trim()) { toast.error("Enter a purpose / description"); return; }
     if (!amountNum || amountNum <= 0) { toast.error("Enter a valid amount"); return; }
     if (capForCategory != null && amountNum > capForCategory) {
-      toast.error(`Amount exceeds your Tier ${profile?.expense_tier} limit for ${categoryLabel(categories, category)}`);
+      toast.error(`Amount exceeds the limit for ${categoryLabel(categories, category)}`);
       return;
     }
     if (paymentFor === "project" && isOtherProject && !manualProjectName.trim()) { toast.error("Type the project name"); return; }
     if (paymentFor === "expense" && !category) { toast.error("Select an expense category"); return; }
     if (paymentFor === "expense" && category === "petrol" && (!petrolKm || parseFloat(petrolKm) <= 0)) {
       toast.error("Enter the total KM for petrol");
+      return;
+    }
+    if (paymentFor === "expense" && category === "food" && (!mealCount || parseFloat(mealCount) <= 0)) {
+      toast.error("Enter the number of meals");
       return;
     }
     if (!file) { toast.error("Attach the bill / receipt"); return; }
@@ -172,6 +208,7 @@ function RequestPaymentModal({
         project_name: paymentFor === "project" && isOtherProject ? manualProjectName.trim() : null,
         expense_category: paymentFor === "expense" ? category : null,
         petrol_km: paymentFor === "expense" && category === "petrol" ? parseFloat(petrolKm) : null,
+        meal_count: paymentFor === "expense" && category === "food" ? parseFloat(mealCount) : null,
         purpose: purpose.trim(),
         amount: amountNum,
         bill_file_path: path,
@@ -218,7 +255,7 @@ function RequestPaymentModal({
                   value={paymentFor}
                   onValueChange={(v) => {
                     setPaymentFor(v as "project" | "expense");
-                    setProjectId(""); setManualProjectName(""); setCategory(""); setPetrolKm("");
+                    setProjectId(""); setManualProjectName(""); setCategory(""); setPetrolKm(""); setMealCount("");
                   }}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -257,7 +294,7 @@ function RequestPaymentModal({
               ) : (
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-ink-primary">Expense category *</label>
-                  <Select value={category || undefined} onValueChange={(v) => { setCategory(v as ExpenseCategory); setPetrolKm(""); }}>
+                  <Select value={category || undefined} onValueChange={(v) => { setCategory(v as ExpenseCategory); setPetrolKm(""); setMealCount(""); }}>
                     <SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger>
                     <SelectContent>
                       {categories.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
@@ -274,9 +311,26 @@ function RequestPaymentModal({
                       />
                     </div>
                   )}
-                  {capForCategory != null && (
+                  {category === "food" && (
+                    <div className="mt-2">
+                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Number of meals *</label>
+                      <Input
+                        type="number" min="0.5" step="0.5"
+                        value={mealCount}
+                        onChange={(e) => setMealCount(e.target.value)}
+                        placeholder="e.g. 2"
+                      />
+                    </div>
+                  )}
+                  {rateUnitLabel && rateForCategory != null && (
                     <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
-                      <Gauge className="h-3 w-3" /> Tier {profile?.expense_tier} limit for {categoryLabel(categories, category)}: ₹{formatAmount(capForCategory)}
+                      <Gauge className="h-3 w-3" /> Rate for {categoryLabel(categories, category)}: ₹{formatAmount(rateForCategory)} per {rateUnitLabel}
+                      {capForCategory != null && <> — max ₹{formatAmount(capForCategory)} for this request</>}
+                    </p>
+                  )}
+                  {!rateUnitLabel && capForCategory != null && (
+                    <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
+                      <Gauge className="h-3 w-3" /> Limit for {categoryLabel(categories, category)}: ₹{formatAmount(capForCategory)}
                     </p>
                   )}
                 </div>
@@ -437,6 +491,9 @@ function PaymentDetailModal({
             {request.payment_for === "expense" && request.expense_category === "petrol" && request.petrol_km != null && (
               <div><p className="text-xs font-medium text-ink-muted">Total KM</p><p className="text-sm text-ink-primary">{request.petrol_km}</p></div>
             )}
+            {request.payment_for === "expense" && request.expense_category === "food" && request.meal_count != null && (
+              <div><p className="text-xs font-medium text-ink-muted">Meals</p><p className="text-sm text-ink-primary">{request.meal_count}</p></div>
+            )}
             <div><p className="text-xs font-medium text-ink-muted">Purpose</p><p className="text-sm text-ink-primary">{request.purpose}</p></div>
             <div>
               <p className="text-xs font-medium text-ink-muted">Bill / Receipt</p>
@@ -556,7 +613,7 @@ export default function PaymentsPage() {
   const { data: categories = [] } = useQuery({
     queryKey: ["expense-categories"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("expense_categories").select("key, label, is_builtin, sort_order").order("sort_order");
+      const { data, error } = await supabase.from("expense_categories").select("key, label, is_builtin, sort_order, rate_unit_label").order("sort_order");
       if (error) throw error;
       return (data ?? []) as ExpenseCategoryDef[];
     },
@@ -672,47 +729,43 @@ export default function PaymentsPage() {
  * User → Expense Tier), not here. */
 function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tierLimits: TierLimit[]; categories: ExpenseCategoryDef[] }) {
   const queryClient = useQueryClient();
-  // "Others" has no tier limit (it's the free-manual-entry fallback), so
+  // "Others" has no limit (it's the free-manual-entry fallback), so
   // it doesn't get a row in this grid — only categories a claim can be
-  // capped on.
+  // capped on. Limits are the same for everyone (no more per-user tiers),
+  // so under the hood this always reads/writes the tier = 1 row.
   const categories = allCategories.filter((c) => c.key !== "other");
-  const tiers: (1 | 2 | 3)[] = [1, 2, 3];
+  const TIER = 1 as const;
   const [newCategoryName, setNewCategoryName] = useState("");
   const [addingCategory, setAddingCategory] = useState(false);
 
-  const valueFor = (tier: 1 | 2 | 3, category: string) =>
-    tierLimits.find((t) => t.tier === tier && t.category === category)?.max_amount;
+  const valueFor = (category: string) =>
+    tierLimits.find((t) => t.category === category)?.max_amount;
 
   const [edits, setEdits] = useState<Record<string, string>>({});
-  const keyOf = (tier: number, category: string) => `${tier}-${category}`;
 
-  const displayValue = (tier: 1 | 2 | 3, category: string) => {
-    const k = keyOf(tier, category);
-    if (k in edits) return edits[k];
-    const v = valueFor(tier, category);
+  const displayValue = (category: string) => {
+    if (category in edits) return edits[category];
+    const v = valueFor(category);
     return v == null ? "" : String(v);
   };
 
   const save = useMutation({
     mutationFn: async () => {
-      const writes = Object.entries(edits).map(([k, v]) => {
-        const [tierStr, category] = k.split("-");
-        return {
-          tier: Number(tierStr),
-          category,
-          max_amount: v.trim() === "" ? null : parseFloat(v),
-        };
-      });
+      const writes = Object.entries(edits).map(([category, v]) => ({
+        tier: TIER,
+        category,
+        max_amount: v.trim() === "" ? null : parseFloat(v),
+      }));
       if (writes.length === 0) return;
       const { error } = await supabase.from("expense_tier_limits").upsert(writes, { onConflict: "tier,category" });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expense-tier-limits"] });
-      toast.success("Tier limits saved");
+      toast.success("Limits saved");
       setEdits({});
     },
-    onError: () => toast.error("Couldn't save tier limits"),
+    onError: () => toast.error("Couldn't save limits"),
   });
 
   const addCategory = useMutation({
@@ -747,35 +800,39 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
     <div className="rounded-card border border-border bg-card p-5">
       <div className="mb-1 flex items-center gap-2">
         <Settings2 className="h-4 w-4 text-ink-muted" />
-        <h2 className="font-heading text-lg font-semibold text-ink-primary">Expense tier limits</h2>
+        <h2 className="font-heading text-lg font-semibold text-ink-primary">Expense limits</h2>
       </div>
       <p className="mb-4 text-xs text-ink-muted">
-        Maximum claimable amount per category, by tier. Leave a cell blank for no limit. Assign a user's tier from the Users page.
+        Maximum claimable amount per category — the same for every requester. Food and Petrol are a rate per meal / per km (multiplied by the meals or KM entered on the request); other categories are a flat cap. Leave a cell blank for no limit.
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px] text-sm">
+        <table className="w-full min-w-[420px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
               <th className="py-2 pr-3">Category</th>
-              {tiers.map((t) => <th key={t} className="py-2 pr-3">Tier {t}</th>)}
+              <th className="py-2 pr-3">Limit</th>
               <th className="py-2 pr-3" />
             </tr>
           </thead>
           <tbody>
             {categories.map((c) => (
               <tr key={c.key} className="border-b border-border last:border-0">
-                <td className="py-2 pr-3 font-medium text-ink-primary">{c.label}</td>
-                {tiers.map((t) => (
-                  <td key={t} className="py-2 pr-3">
-                    <Input
-                      type="number" min="0" step="0.01"
-                      className="h-9 w-28"
-                      placeholder="No limit"
-                      value={displayValue(t, c.key)}
-                      onChange={(e) => setEdits((prev) => ({ ...prev, [keyOf(t, c.key)]: e.target.value }))}
-                    />
-                  </td>
-                ))}
+                <td className="py-2 pr-3 font-medium text-ink-primary">
+                  {c.label}
+                  {c.rate_unit_label && (
+                    <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
+                  )}
+                </td>
+                <td className="py-2 pr-3">
+                  <Input
+                    type="number" min="0" step="0.01"
+                    className="h-9 w-28"
+                    placeholder="No limit"
+                    title={c.rate_unit_label ? `₹ per ${c.rate_unit_label}` : "Flat max amount"}
+                    value={displayValue(c.key)}
+                    onChange={(e) => setEdits((prev) => ({ ...prev, [c.key]: e.target.value }))}
+                  />
+                </td>
                 <td className="py-2 pr-3">
                   {!c.is_builtin && (
                     <button
