@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Building2, MapPin, Palmtree, Plus, Play, Square, Navigation,
-  Phone, User as UserIcon, Clock, Route as RouteIcon, AlarmClock, Trash2, Pencil,
+  Phone, User as UserIcon, Clock, Route as RouteIcon, Trash2, Pencil, CalendarClock,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,6 +18,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import RequestSiteVisitModal from "@/components/RequestSiteVisitModal";
+import SiteVisitApprovals from "@/components/SiteVisitApprovals";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
 
@@ -31,6 +33,12 @@ const TRIP_META: Record<string, { label: string; bg: string; text: string }> = {
   not_started: { label: "Not started", bg: "bg-muted", text: "text-ink-secondary" },
   in_progress: { label: "Visit in progress", bg: "bg-warning-light", text: "text-warning" },
   completed: { label: "Visit completed", bg: "bg-success-light", text: "text-success" },
+};
+
+const REQUEST_META: Record<string, { label: string; bg: string; text: string }> = {
+  pending: { label: "Awaiting approval", bg: "bg-warning-light", text: "text-warning" },
+  approved: { label: "Approved", bg: "bg-success-light", text: "text-success" },
+  rejected: { label: "Rejected", bg: "bg-destructive/10", text: "text-destructive" },
 };
 
 type Profile = {
@@ -47,7 +55,14 @@ type SiteVisit = {
   id: string; user_id: string; visit_date: string; site_name: string; location: string;
   contact_person: string | null; contact_phone: string | null; purpose: string | null; notes: string | null;
   trip_status: string; km_start: number | null; km_end: number | null; started_at: string | null; ended_at: string | null;
-  trip_group_id: string; stop_order: number; created_at: string;
+  trip_group_id: string; stop_order: number; created_at: string; request_id: string | null;
+};
+
+type SiteVisitRequest = {
+  id: string; user_id: string; site_name: string; location: string;
+  contact_person: string | null; contact_phone: string | null; purpose: string | null; notes: string | null;
+  planned_at: string; status: "pending" | "approved" | "rejected";
+  decision_note: string | null; site_visit_id: string | null; created_at: string;
 };
 
 /** Groups site_visits rows that belong to the same trip (same trip_group_id),
@@ -72,144 +87,6 @@ type SiteStop = {
   purpose: string;
   notes: string;
 };
-
-const emptyStop = (): SiteStop => ({ siteName: "", location: "", contactPerson: "", contactPhone: "", purpose: "", notes: "" });
-
-function NewVisitModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [sites, setSites] = useState<SiteStop[]>([emptyStop()]);
-
-  const reset = () => {
-    setSites([emptyStop()]);
-  };
-
-  const updateStop = (index: number, patch: Partial<SiteStop>) => {
-    setSites((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
-  };
-  const addStop = () => setSites((prev) => [...prev, emptyStop()]);
-  const removeStop = (index: number) => setSites((prev) => prev.filter((_, i) => i !== index));
-
-  // Saves the visit details only. The trip itself only starts once the user
-  // clicks "Start Visit" on the card and enters the starting KM there.
-  const create = useMutation({
-    mutationFn: async () => {
-      const tripGroupId = crypto.randomUUID();
-      const rows = sites.map((s, i) => ({
-        user_id: user!.id,
-        visit_date: today(),
-        trip_group_id: tripGroupId,
-        stop_order: i + 1,
-        site_name: s.siteName.trim(),
-        location: s.location.trim(),
-        contact_person: s.contactPerson.trim() || null,
-        contact_phone: s.contactPhone.trim() || null,
-        purpose: s.purpose.trim() || null,
-        notes: s.notes.trim() || null,
-      }));
-      const { error } = await supabase.from("site_visits").insert(rows);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
-      toast.success("Site visit saved — your manager has been notified. Click \"Start Visit\" when you head out.");
-      reset();
-      onClose();
-    },
-    onError: () => toast.error("Couldn't save the site visit"),
-  });
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-heading text-xl font-bold text-ink-primary">New Site Visit</h2>
-              <button onClick={onClose} className="text-ink-muted hover:text-ink-primary"><X className="h-5 w-5" /></button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const incomplete = sites.some((s) => !s.siteName.trim() || !s.location.trim());
-                if (incomplete) {
-                  toast.error("Site name and location are required for every site");
-                  return;
-                }
-                create.mutate();
-              }}
-              className="space-y-5"
-            >
-              {sites.map((stop, index) => (
-                <div key={index} className="rounded-lg border border-border p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-ink-primary">Site {index + 1}</p>
-                    {sites.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeStop(index)}
-                        className="text-ink-muted hover:text-destructive"
-                        aria-label={`Remove site ${index + 1}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Site / Client name *</label>
-                    <Input value={stop.siteName} onChange={(e) => updateStop(index, { siteName: e.target.value })} autoFocus={index === 0} />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Location / Address *</label>
-                    <Input value={stop.location} onChange={(e) => updateStop(index, { location: e.target.value })} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact person</label>
-                      <Input value={stop.contactPerson} onChange={(e) => updateStop(index, { contactPerson: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-ink-primary">Contact phone</label>
-                      <Input value={stop.contactPhone} onChange={(e) => updateStop(index, { contactPhone: e.target.value })} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Purpose of visit</label>
-                    <Input value={stop.purpose} onChange={(e) => updateStop(index, { purpose: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-ink-primary">Notes</label>
-                    <Textarea value={stop.notes} onChange={(e) => updateStop(index, { notes: e.target.value })} rows={2} />
-                  </div>
-                </div>
-              ))}
-
-              <button type="button" onClick={addStop} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                <Plus className="h-4 w-4" /> Add another site
-              </button>
-
-              <p className="text-xs text-ink-muted">
-                Save the visit details now — you'll enter the starting KM and click "Start Visit" on the card
-                when you actually head out, and "End Visit" with the ending KM once you're back.
-              </p>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-                <Button type="submit" disabled={create.isPending}>{create.isPending ? "Saving..." : "Save visit"}</Button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-}
 
 /** Start/End Trip controls that act on every stop in the trip group at once. */
 function TripControls({ trip }: { trip: SiteVisit[] }) {
@@ -452,14 +329,14 @@ function EditVisitModal({ trip, onClose }: { trip: SiteVisit[] | null; onClose: 
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
+          className="relative w-full md:max-w-[560px] max-h-[92vh] overflow-y-auto rounded-t-modal md:rounded-modal bg-card p-5 sm:p-6 shadow-modal"
         >
           <div className="flex items-center justify-between mb-5">
             <h2 className="font-heading text-xl font-bold text-ink-primary">Edit Visit</h2>
@@ -528,14 +405,14 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
+          className="relative w-full md:max-w-[560px] max-h-[92vh] overflow-y-auto rounded-t-modal md:rounded-modal bg-card p-5 sm:p-6 shadow-modal"
         >
           <div className="flex items-start justify-between mb-5">
             <div>
@@ -600,72 +477,90 @@ function TripDetailModal({ trip, ownerName, onClose }: { trip: SiteVisit[] | nul
   );
 }
 
-function CheckinTimeSettings() {
+/**
+ * The rep's own requests — pending / approved / rejected. Once a request is
+ * approved AND its planned time has arrived, "Start Visit" creates the
+ * site_visits row (linked back via request_id) and hands off into the usual
+ * TripControls flow for ending the visit.
+ */
+function MyRequests({ requests }: { requests: SiteVisitRequest[] }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
-  const { data: settings } = useQuery({
-    queryKey: ["sales-tracker-settings"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("sales_tracker_settings").select("*").eq("id", "default").maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  // checkin_time comes back as "HH:MM:SS" — <input type="time"> wants "HH:MM".
-  const [time, setTime] = useState("09:30");
-  const [touched, setTouched] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    if (settings?.checkin_time && !touched) setTime(settings.checkin_time.slice(0, 5));
-  }, [settings?.checkin_time, touched]);
+    const id = setInterval(() => setNow(new Date()), 30 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
-  const save = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase
-        .from("sales_tracker_settings")
-        .update({ checkin_time: `${time}:00`, updated_by: user!.id, updated_at: new Date().toISOString() })
-        .eq("id", "default");
+  const startFromRequest = useMutation({
+    mutationFn: async (req: SiteVisitRequest) => {
+      const tripGroupId = crypto.randomUUID();
+      const { error } = await supabase.from("site_visits").insert({
+        user_id: user!.id,
+        visit_date: today(),
+        trip_group_id: tripGroupId,
+        stop_order: 1,
+        site_name: req.site_name,
+        location: req.location,
+        contact_person: req.contact_person,
+        contact_phone: req.contact_phone,
+        purpose: req.purpose,
+        notes: req.notes,
+        request_id: req.id,
+        trip_status: "not_started",
+      });
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sales-tracker-settings"] });
-      setTouched(false);
-      toast.success("Check-in time updated");
+      queryClient.invalidateQueries({ queryKey: ["sales-tracker"] });
+      toast.success("Visit added below — click \"Start Visit\" when you head out.");
     },
-    onError: () => toast.error("Couldn't save the check-in time"),
+    onError: () => toast.error("Couldn't start this visit"),
   });
+
+  if (requests.length === 0) return null;
 
   return (
     <div className="rounded-card border border-border bg-card p-5">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <AlarmClock className="h-5 w-5" />
-        </div>
-        <div className="flex-1">
-          <h2 className="font-heading text-lg font-semibold text-ink-primary">Daily check-in popup time</h2>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            Choose what time the In Office / On Site / Leave popup starts appearing for Sales-department staff.
-            It stays hidden before this time and shows up automatically once it arrives — no page refresh needed.
-          </p>
-          <div className="mt-4 flex items-end gap-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-ink-primary">Check-in time</label>
-              <Input
-                type="time"
-                value={time}
-                onChange={(e) => { setTime(e.target.value); setTouched(true); }}
-                className="w-40 h-10"
-              />
+      <h2 className="mb-4 font-heading text-lg font-semibold text-ink-primary">My requests</h2>
+      <div className="space-y-3">
+        {requests.map((req) => {
+          const meta = REQUEST_META[req.status];
+          const isDue = new Date(req.planned_at).getTime() <= now.getTime();
+          const alreadyStarted = !!req.site_visit_id;
+          return (
+            <div key={req.id} className="rounded-lg border border-border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-ink-primary">{req.site_name}</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><MapPin className="h-3 w-3" /> {req.location}</p>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
+                    <CalendarClock className="h-3 w-3" /> Planned {format(new Date(req.planned_at), "d MMM, h:mm a")}
+                  </p>
+                  {req.status === "rejected" && req.decision_note && (
+                    <p className="mt-1 text-xs text-destructive">Reason: {req.decision_note}</p>
+                  )}
+                </div>
+                <span className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-medium", meta.bg, meta.text)}>{meta.label}</span>
+              </div>
+
+              {req.status === "approved" && !alreadyStarted && (
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={!isDue || startFromRequest.isPending}
+                    onClick={() => startFromRequest.mutate(req)}
+                    title={!isDue ? "You can start this once the planned time arrives" : undefined}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    {isDue ? "Start Visit" : `Available ${format(new Date(req.planned_at), "d MMM, h:mm a")}`}
+                  </Button>
+                </div>
+              )}
             </div>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || !time}>
-              {save.isPending ? "Saving..." : "Save"}
-            </Button>
-            {settings?.checkin_time && !touched && (
-              <span className="pb-2.5 text-xs text-ink-muted">Currently {settings.checkin_time.slice(0, 5)}</span>
-            )}
-          </div>
-        </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -673,12 +568,11 @@ function CheckinTimeSettings() {
 
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
-  const [newVisitOpen, setNewVisitOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
   const [viewTrip, setViewTrip] = useState<{ trip: SiteVisit[]; ownerName?: string } | null>(null);
   const [editTrip, setEditTrip] = useState<SiteVisit[] | null>(null);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
-  const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
 
   if (profile && !isTeamHead && !isSalesDept) {
     return (
@@ -716,6 +610,20 @@ export default function SalesTrackerPage() {
       const { data, error } = await supabase.from("site_visits").select("*").eq("user_id", user!.id).order("created_at", { ascending: false }).limit(60);
       if (error) throw error;
       return (data ?? []) as SiteVisit[];
+    },
+    enabled: !!user,
+  });
+
+  const { data: myRequests = [] } = useQuery({
+    queryKey: ["site-visit-requests", "mine", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("site_visit_requests")
+        .select("*")
+        .eq("user_id", user!.id)
+        .order("planned_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as SiteVisitRequest[];
     },
     enabled: !!user,
   });
@@ -764,23 +672,21 @@ export default function SalesTrackerPage() {
   const team = useMemo(() => people.filter((p) => teamIds.includes(p.id)), [people, teamIds]);
 
   return (
-    <AnimatedPage className="space-y-6">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <AnimatedPage className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-ink-primary">Sales Tracker</h1>
+          <h1 className="font-heading text-xl sm:text-2xl font-bold text-ink-primary">Sales Tracker</h1>
           <p className="text-sm text-ink-muted">
-            {isTeamHead ? "Live status and site visits for your team." : "Log your site visits and track your trips."}
+            {isTeamHead ? "Live status and site visits for your team." : "Request approval and track your site visits."}
           </p>
         </div>
-        <Button onClick={() => setNewVisitOpen(true)} className="gap-1.5 self-start sm:self-auto">
-          <Plus className="h-4 w-4" /> New Site Visit
+        <Button onClick={() => setRequestOpen(true)} className="gap-1.5 h-9 sm:h-10 self-start sm:self-auto">
+          <Plus className="h-4 w-4" /> Request Site Visit
         </Button>
       </div>
 
-      {isAdmin && <CheckinTimeSettings />}
-
       {isTeamHead && (
-        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
           <motion.div variants={staggerItem}><StatCard title="Checked in today" value={reportedToday} icon={UserIcon} /></motion.div>
           <motion.div variants={staggerItem}><StatCard title="On site today" value={onSiteToday} icon={MapPin} iconColor="text-warning" iconBg="bg-warning-light" /></motion.div>
           <motion.div variants={staggerItem}><StatCard title="On leave today" value={onLeaveToday} icon={Palmtree} iconColor="text-ink-secondary" iconBg="bg-muted" /></motion.div>
@@ -788,31 +694,30 @@ export default function SalesTrackerPage() {
         </motion.div>
       )}
 
+      {isTeamHead && <SiteVisitApprovals />}
+
       {isTeamHead && (
-        <div className="rounded-card border border-border bg-card p-5">
-          <h2 className="mb-4 font-heading text-lg font-semibold text-ink-primary">Team status — today</h2>
+        <div className="rounded-xl sm:rounded-card border border-border bg-card p-3.5 sm:p-5">
+          <h2 className="mb-3 sm:mb-4 font-heading text-sm sm:text-lg font-semibold text-ink-primary">Team status — today</h2>
           {team.length === 0 ? (
             <EmptyState icon={UserIcon} title="No team members yet" description="Assign team members to see their daily status here." />
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
               {team.map((member) => {
                 const status = teamStatusToday.find((s) => s.user_id === member.id);
                 const meta = status ? STATUS_META[status.status] : null;
                 return (
-                  <div key={member.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-                    <div className="flex items-center gap-3">
+                  <div key={member.id} className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 sm:px-3 sm:py-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <UserAvatar name={member.full_name} avatarUrl={member.avatar_url} size="sm" />
-                      <div>
-                        <p className="text-sm font-medium text-ink-primary">{member.full_name}</p>
-                        <p className="text-xs text-ink-muted">{member.email}</p>
-                      </div>
+                      <p className="truncate text-xs sm:text-sm font-medium text-ink-primary">{member.full_name}</p>
                     </div>
                     {meta ? (
-                      <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium", meta.bg, meta.text)}>
-                        <meta.icon className="h-3.5 w-3.5" /> {meta.label}
+                      <span className={cn("flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-medium", meta.bg, meta.text)}>
+                        <meta.icon className="h-3 w-3" /> {meta.label}
                       </span>
                     ) : (
-                      <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-ink-muted">Not checked in</span>
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] sm:text-xs font-medium text-ink-muted">Not checked in</span>
                     )}
                   </div>
                 );
@@ -847,6 +752,8 @@ export default function SalesTrackerPage() {
         </div>
       )}
 
+      <MyRequests requests={myRequests} />
+
       <div className="rounded-card border border-border bg-card p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold text-ink-primary">My site visits</h2>
@@ -857,7 +764,7 @@ export default function SalesTrackerPage() {
           )}
         </div>
         {myTrips.length === 0 ? (
-          <EmptyState icon={MapPin} title="No site visits yet" description="Log a site visit to start tracking your trips and KM travelled." />
+          <EmptyState icon={MapPin} title="No site visits yet" description="Once your team lead approves a request, start it here to begin tracking KM." />
         ) : (
           <div className="space-y-3">
             {myTrips.map((trip) => (
@@ -872,7 +779,7 @@ export default function SalesTrackerPage() {
         )}
       </div>
 
-      <NewVisitModal open={newVisitOpen} onClose={() => setNewVisitOpen(false)} />
+      <RequestSiteVisitModal open={requestOpen} onClose={() => setRequestOpen(false)} />
       <TripDetailModal trip={viewTrip?.trip ?? null} ownerName={viewTrip?.ownerName} onClose={() => setViewTrip(null)} />
       <EditVisitModal trip={editTrip} onClose={() => setEditTrip(null)} />
     </AnimatedPage>
