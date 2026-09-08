@@ -13,6 +13,7 @@ type Profile = {
   phone: string | null;
   is_active: boolean;
   manager_id: string | null;
+  expense_tier: 1 | 2 | 3 | null;
 };
 
 type AuthContextType = {
