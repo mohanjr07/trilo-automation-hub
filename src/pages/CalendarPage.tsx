@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon,
-  X, Trash2, Search, MapPin, Clock, Route as RouteIcon,
+  X, Trash2, Search,
 } from "lucide-react";
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth,
@@ -27,14 +27,8 @@ const FILTER_OPTIONS = [
   { value: "all", label: "All Events" },
   { value: "tasks", label: "Tasks" },
   { value: "leaves", label: "Approved Leave" },
-  { value: "visits", label: "Site Visits" },
   { value: "holidays", label: "Holidays" },
 ];
-const TRIP_STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
-  not_started: { label: "Not started", bg: "bg-muted", text: "text-ink-secondary" },
-  in_progress: { label: "In progress", bg: "bg-warning-light", text: "text-warning" },
-  completed: { label: "Completed", bg: "bg-success-light", text: "text-success" },
-};
 
 export default function CalendarPage() {
   const { profile } = useAuth();
@@ -99,22 +93,6 @@ export default function CalendarPage() {
     enabled: !!profile,
   });
 
-  // Fetch Sales Tracker site visits (Start Trip / End Trip + where they went)
-  const { data: siteVisits = [] } = useQuery({
-    queryKey: ["calendar-site-visits", format(monthStart, "yyyy-MM"), profile?.role, profile?.id],
-    queryFn: async () => {
-      let q = supabase.from("site_visits")
-        .select("id, visit_date, site_name, location, trip_status, km_start, km_end, started_at, ended_at, trip_group_id, stop_order, user_id, employee:profiles!site_visits_user_id_fkey(full_name)")
-        .gte("visit_date", format(calStart, "yyyy-MM-dd"))
-        .lte("visit_date", format(calEnd, "yyyy-MM-dd"));
-      if (!isAdminOrManager) q = q.eq("user_id", profile!.id);
-      const { data, error } = await q as any;
-      if (error) return [];
-      return data ?? [];
-    },
-    enabled: !!profile,
-  });
-
   // Fetch holidays
   const { data: holidays = [] } = useQuery({
     queryKey: ["calendar-holidays", format(monthStart, "yyyy-MM")],
@@ -150,24 +128,11 @@ export default function CalendarPage() {
     setGoToDate("");
   };
 
-  // Site visits sharing a trip_group_id are one trip (possibly multiple
-  // sites) — group them so the calendar shows one entry per trip, not one
-  // per site stop.
-  const visitTrips = useMemo(() => {
-    const byGroup = new Map<string, any[]>();
-    siteVisits.forEach((v: any) => {
-      const arr = byGroup.get(v.trip_group_id) ?? [];
-      arr.push(v);
-      byGroup.set(v.trip_group_id, arr);
-    });
-    return Array.from(byGroup.values()).map((g) => [...g].sort((a, b) => a.stop_order - b.stop_order));
-  }, [siteVisits]);
-
   // Build a map of date → events (filtered)
   const dateEvents = useMemo(() => {
-    const map: Record<string, { tasks: any[]; leaves: any[]; holidays: any[]; visits: any[][] }> = {};
+    const map: Record<string, { tasks: any[]; leaves: any[]; holidays: any[] }> = {};
     const ensure = (k: string) => {
-      if (!map[k]) map[k] = { tasks: [], leaves: [], holidays: [], visits: [] };
+      if (!map[k]) map[k] = { tasks: [], leaves: [], holidays: [] };
       return map[k];
     };
 
@@ -190,13 +155,8 @@ export default function CalendarPage() {
         ensure(h.date).holidays.push(h);
       });
     }
-    if (filter === "all" || filter === "visits") {
-      visitTrips.forEach((trip) => {
-        ensure(trip[0].visit_date).visits.push(trip);
-      });
-    }
     return map;
-  }, [tasks, leaves, holidays, visitTrips, filter]);
+  }, [tasks, leaves, holidays, filter]);
 
   const selectedKey = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
   const selectedEvents = selectedKey ? dateEvents[selectedKey] : null;
@@ -257,7 +217,6 @@ export default function CalendarPage() {
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" /> Tasks</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-success" /> Approved Leave</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-destructive" /> Holiday</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-warning" /> Site Visit</span>
       </div>
 
       {/* Calendar Grid */}
@@ -306,14 +265,9 @@ export default function CalendarPage() {
                         {isAdminOrManager ? (l as any).employee?.full_name : l.type}
                       </div>
                     ))}
-                    {events.visits.slice(0, 1).map((trip: any[], idx: number) => (
-                      <div key={idx} className="truncate text-[10px] md:text-xs rounded px-1 py-0.5 bg-warning/10 text-warning">
-                        {isAdminOrManager ? trip[0].employee?.full_name : (trip.length > 1 ? `${trip.length} sites` : trip[0].site_name)}
-                      </div>
-                    ))}
-                    {(events.tasks.length + events.leaves.length + events.holidays.length + events.visits.length) > 3 && (
+                    {(events.tasks.length + events.leaves.length + events.holidays.length) > 3 && (
                       <div className="text-[10px] text-ink-muted">
-                        +{events.tasks.length + events.leaves.length + events.holidays.length + events.visits.length - 3} more
+                        +{events.tasks.length + events.leaves.length + events.holidays.length - 3} more
                       </div>
                     )}
                   </div>
@@ -399,53 +353,7 @@ export default function CalendarPage() {
               </div>
             ) : null}
 
-            {/* Site Visits */}
-            {selectedEvents?.visits.length ? (
-              <div className="mt-3">
-                <h4 className="text-xs font-semibold text-ink-muted uppercase mb-2">Site Visits ({selectedEvents.visits.length})</h4>
-                <div className="space-y-2">
-                  {selectedEvents.visits.map((trip: any[], idx: number) => {
-                    const primary = trip[0];
-                    const tripMeta = TRIP_STATUS_META[primary.trip_status] ?? TRIP_STATUS_META.not_started;
-                    const distance = primary.km_start != null && primary.km_end != null ? primary.km_end - primary.km_start : null;
-                    return (
-                      <div key={idx} className="rounded-lg bg-warning/5 border border-warning/20 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-ink-primary">
-                              {isAdminOrManager && primary.employee?.full_name ? `${primary.employee.full_name} · ` : ""}
-                              {trip.length > 1 ? `${trip.length} sites` : primary.site_name}
-                            </p>
-                            <div className="mt-1 space-y-1">
-                              {trip.map((v: any) => (
-                                <p key={v.id} className="flex items-center gap-1 text-xs text-ink-muted">
-                                  <MapPin className="h-3 w-3 shrink-0" /> {v.site_name} — {v.location}
-                                </p>
-                              ))}
-                            </div>
-                            {(primary.started_at || primary.ended_at) && (
-                              <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
-                                <Clock className="h-3 w-3" />
-                                {primary.started_at && `Started ${format(new Date(primary.started_at), "h:mm a")}`}
-                                {primary.ended_at && ` · Ended ${format(new Date(primary.ended_at), "h:mm a")}`}
-                              </p>
-                            )}
-                            {distance != null && (
-                              <p className="mt-1 flex items-center gap-1 text-xs text-success font-medium">
-                                <RouteIcon className="h-3 w-3" /> {distance} km travelled
-                              </p>
-                            )}
-                          </div>
-                          <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${tripMeta.bg} ${tripMeta.text}`}>{tripMeta.label}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            {!selectedEvents?.tasks.length && !selectedEvents?.leaves.length && !selectedEvents?.holidays.length && !selectedEvents?.visits.length && (
+            {!selectedEvents?.tasks.length && !selectedEvents?.leaves.length && !selectedEvents?.holidays.length && (
               <p className="text-sm text-ink-muted text-center py-6">No events on this day</p>
             )}
           </motion.div>
