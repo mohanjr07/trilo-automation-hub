@@ -28,6 +28,7 @@ const FILTER_OPTIONS = [
   { value: "tasks", label: "Tasks" },
   { value: "leaves", label: "Approved Leave" },
   { value: "holidays", label: "Holidays" },
+  { value: "site-visits", label: "Site Visits" },
 ];
 
 export default function CalendarPage() {
@@ -106,6 +107,24 @@ export default function CalendarPage() {
     },
   });
 
+  // Fetch site visit requests (one row per stop; grouped by trip_group_id
+  // when rendering). pending -> orange, approved -> green, rejected -> hidden.
+  const { data: siteVisits = [] } = useQuery({
+    queryKey: ["calendar-site-visits", format(monthStart, "yyyy-MM"), profile?.role, profile?.id],
+    queryFn: async () => {
+      let q = supabase.from("site_visit_requests")
+        .select("id, trip_group_id, stop_order, site_name, location, purpose, planned_at, status, user_id, employee:profiles!site_visit_requests_user_id_fkey(full_name)")
+        .gte("planned_at", calStart.toISOString())
+        .lte("planned_at", new Date(calEnd.getTime() + 24 * 60 * 60 * 1000).toISOString())
+        .neq("status", "rejected")
+        .order("planned_at", { ascending: true });
+      if (!isAdminOrManager) q = q.eq("user_id", profile!.id);
+      const { data } = await q;
+      return (data ?? []) as any[];
+    },
+    enabled: !!profile,
+  });
+
   // Delete leave mutation
   const deleteLeave = useMutation({
     mutationFn: async (id: string) => {
@@ -128,11 +147,33 @@ export default function CalendarPage() {
     setGoToDate("");
   };
 
+  // Group site visit stops sharing the same trip_group_id into one calendar
+  // entry per trip, keyed by the trip's planned date.
+  const siteVisitTrips = useMemo(() => {
+    const byGroup = new Map<string, any[]>();
+    for (const r of siteVisits) {
+      const arr = byGroup.get(r.trip_group_id) ?? [];
+      arr.push(r);
+      byGroup.set(r.trip_group_id, arr);
+    }
+    return Array.from(byGroup.values()).map((stops) => {
+      const sorted = [...stops].sort((a, b) => a.stop_order - b.stop_order);
+      const primary = sorted[0];
+      return {
+        trip_group_id: primary.trip_group_id,
+        date: format(parseISO(primary.planned_at), "yyyy-MM-dd"),
+        status: primary.status as "pending" | "approved",
+        stops: sorted,
+        employeeName: primary.employee?.full_name as string | undefined,
+      };
+    });
+  }, [siteVisits]);
+
   // Build a map of date → events (filtered)
   const dateEvents = useMemo(() => {
-    const map: Record<string, { tasks: any[]; leaves: any[]; holidays: any[] }> = {};
+    const map: Record<string, { tasks: any[]; leaves: any[]; holidays: any[]; siteVisits: typeof siteVisitTrips }> = {};
     const ensure = (k: string) => {
-      if (!map[k]) map[k] = { tasks: [], leaves: [], holidays: [] };
+      if (!map[k]) map[k] = { tasks: [], leaves: [], holidays: [], siteVisits: [] };
       return map[k];
     };
 
@@ -155,8 +196,13 @@ export default function CalendarPage() {
         ensure(h.date).holidays.push(h);
       });
     }
+    if (filter === "all" || filter === "site-visits") {
+      siteVisitTrips.forEach((trip) => {
+        ensure(trip.date).siteVisits.push(trip);
+      });
+    }
     return map;
-  }, [tasks, leaves, holidays, filter]);
+  }, [tasks, leaves, holidays, siteVisitTrips, filter]);
 
   const selectedKey = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
   const selectedEvents = selectedKey ? dateEvents[selectedKey] : null;
@@ -217,6 +263,8 @@ export default function CalendarPage() {
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" /> Tasks</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-success" /> Approved Leave</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-destructive" /> Holiday</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Approved visit</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-orange-500" /> Pending visit</span>
       </div>
 
       {/* Calendar Grid */}
@@ -265,9 +313,19 @@ export default function CalendarPage() {
                         {isAdminOrManager ? (l as any).employee?.full_name : l.type}
                       </div>
                     ))}
-                    {(events.tasks.length + events.leaves.length + events.holidays.length) > 3 && (
+                    {events.siteVisits.slice(0, 1).map((trip) => (
+                      <div
+                        key={trip.trip_group_id}
+                        className={`truncate text-[10px] md:text-xs rounded px-1 py-0.5 font-medium ${
+                          trip.status === "approved" ? "bg-emerald-500/10 text-emerald-600" : "bg-orange-500/10 text-orange-600"
+                        }`}
+                      >
+                        {isAdminOrManager ? trip.employeeName ?? "Site visit" : trip.stops.length > 1 ? `${trip.stops.length} sites` : trip.stops[0].site_name}
+                      </div>
+                    ))}
+                    {(events.tasks.length + events.leaves.length + events.holidays.length + events.siteVisits.length) > 3 && (
                       <div className="text-[10px] text-ink-muted">
-                        +{events.tasks.length + events.leaves.length + events.holidays.length - 3} more
+                        +{events.tasks.length + events.leaves.length + events.holidays.length + events.siteVisits.length - 3} more
                       </div>
                     )}
                   </div>
@@ -353,7 +411,49 @@ export default function CalendarPage() {
               </div>
             ) : null}
 
-            {!selectedEvents?.tasks.length && !selectedEvents?.leaves.length && !selectedEvents?.holidays.length && (
+            {/* Site visits */}
+            {selectedEvents?.siteVisits.length ? (
+              <div className="mb-3">
+                <h4 className="text-xs font-semibold text-ink-muted uppercase mb-2">Site Visits ({selectedEvents.siteVisits.length})</h4>
+                <div className="space-y-2">
+                  {selectedEvents.siteVisits.map((trip) => (
+                    <div
+                      key={trip.trip_group_id}
+                      className={`rounded-lg p-3 border ${
+                        trip.status === "approved" ? "bg-emerald-500/5 border-emerald-500/20" : "bg-orange-500/5 border-orange-500/20"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-ink-primary">
+                            {isAdminOrManager && trip.employeeName ? `${trip.employeeName} · ` : ""}
+                            {trip.stops.length > 1 ? `${trip.stops.length} sites` : trip.stops[0].site_name}
+                          </p>
+                          {trip.stops.length === 1 && <p className="text-xs text-ink-muted">{trip.stops[0].location}</p>}
+                          <p className="text-xs text-ink-muted">{format(parseISO(trip.stops[0].planned_at), "h:mm a")}</p>
+                        </div>
+                        <span
+                          className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
+                            trip.status === "approved" ? "bg-emerald-500/10 text-emerald-600" : "bg-orange-500/10 text-orange-600"
+                          }`}
+                        >
+                          {trip.status === "approved" ? "Approved" : "Pending"}
+                        </span>
+                      </div>
+                      {trip.stops.length > 1 && (
+                        <div className="mt-2 space-y-1 border-l border-border pl-3">
+                          {trip.stops.map((s: any, i: number) => (
+                            <p key={s.id} className="text-xs text-ink-muted">{i + 1}. {s.site_name} — {s.location}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {!selectedEvents?.tasks.length && !selectedEvents?.leaves.length && !selectedEvents?.holidays.length && !selectedEvents?.siteVisits.length && (
               <p className="text-sm text-ink-muted text-center py-6">No events on this day</p>
             )}
           </motion.div>
