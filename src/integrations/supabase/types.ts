@@ -134,6 +134,66 @@ export type Database = {
           },
         ]
       }
+      expense_categories: {
+        Row: {
+          created_at: string
+          group_key: string | null
+          group_label: string | null
+          id: string
+          is_builtin: boolean
+          key: string
+          label: string
+          rate_unit_label: string | null
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          group_key?: string | null
+          group_label?: string | null
+          id?: string
+          is_builtin?: boolean
+          key: string
+          label: string
+          rate_unit_label?: string | null
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          group_key?: string | null
+          group_label?: string | null
+          id?: string
+          is_builtin?: boolean
+          key?: string
+          label?: string
+          rate_unit_label?: string | null
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      expense_tier_limits: {
+        Row: {
+          category: string
+          id: string
+          max_amount: number | null
+          tier: number
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          id?: string
+          max_amount?: number | null
+          tier: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          id?: string
+          max_amount?: number | null
+          tier?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       holidays: {
         Row: {
           color: string | null
@@ -514,6 +574,116 @@ export type Database = {
           },
         ]
       }
+      payment_requests: {
+        Row: {
+          amount: number
+          bill_file_name: string | null
+          bill_file_path: string
+          bill_mime_type: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decided_by_name: string | null
+          decision_note: string | null
+          expense_category: string | null
+          id: string
+          meal_count: number | null
+          paid_at: string | null
+          paid_by: string | null
+          paid_by_name: string | null
+          payment_for: string
+          petrol_km: number | null
+          project_id: string | null
+          project_name: string | null
+          purpose: string
+          requester_id: string
+          requester_name: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          bill_file_name?: string | null
+          bill_file_path: string
+          bill_mime_type?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decided_by_name?: string | null
+          decision_note?: string | null
+          expense_category?: string | null
+          id?: string
+          meal_count?: number | null
+          paid_at?: string | null
+          paid_by?: string | null
+          paid_by_name?: string | null
+          payment_for?: string
+          petrol_km?: number | null
+          project_id?: string | null
+          project_name?: string | null
+          purpose: string
+          requester_id: string
+          requester_name?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          bill_file_name?: string | null
+          bill_file_path?: string
+          bill_mime_type?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decided_by_name?: string | null
+          decision_note?: string | null
+          expense_category?: string | null
+          id?: string
+          meal_count?: number | null
+          paid_at?: string | null
+          paid_by?: string | null
+          paid_by_name?: string | null
+          payment_for?: string
+          petrol_km?: number | null
+          project_id?: string | null
+          project_name?: string | null
+          purpose?: string
+          requester_id?: string
+          requester_name?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_requests_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_requests_paid_by_fkey"
+            columns: ["paid_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -521,6 +691,7 @@ export type Database = {
           created_by: string | null
           department: string | null
           email: string
+          expense_tier: number | null
           full_name: string
           id: string
           is_active: boolean | null
@@ -535,6 +706,7 @@ export type Database = {
           created_by?: string | null
           department?: string | null
           email: string
+          expense_tier?: number | null
           full_name: string
           id: string
           is_active?: boolean | null
@@ -549,6 +721,7 @@ export type Database = {
           created_by?: string | null
           department?: string | null
           email?: string
+          expense_tier?: number | null
           full_name?: string
           id?: string
           is_active?: boolean | null
@@ -773,87 +946,6 @@ export type Database = {
           {
             foreignKeyName: "sales_tracker_settings_updated_by_fkey"
             columns: ["updated_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      site_visits: {
-        Row: {
-          contact_person: string | null
-          contact_phone: string | null
-          created_at: string | null
-          daily_status_id: string | null
-          ended_at: string | null
-          id: string
-          km_end: number | null
-          km_start: number | null
-          location: string
-          notes: string | null
-          purpose: string | null
-          site_name: string
-          started_at: string | null
-          stop_order: number
-          trip_group_id: string
-          trip_status: string
-          updated_at: string | null
-          user_id: string
-          visit_date: string
-        }
-        Insert: {
-          contact_person?: string | null
-          contact_phone?: string | null
-          created_at?: string | null
-          daily_status_id?: string | null
-          ended_at?: string | null
-          id?: string
-          km_end?: number | null
-          km_start?: number | null
-          location: string
-          notes?: string | null
-          purpose?: string | null
-          site_name: string
-          started_at?: string | null
-          stop_order?: number
-          trip_group_id?: string
-          trip_status?: string
-          updated_at?: string | null
-          user_id: string
-          visit_date?: string
-        }
-        Update: {
-          contact_person?: string | null
-          contact_phone?: string | null
-          created_at?: string | null
-          daily_status_id?: string | null
-          ended_at?: string | null
-          id?: string
-          km_end?: number | null
-          km_start?: number | null
-          location?: string
-          notes?: string | null
-          purpose?: string | null
-          site_name?: string
-          started_at?: string | null
-          stop_order?: number
-          trip_group_id?: string
-          trip_status?: string
-          updated_at?: string | null
-          user_id?: string
-          visit_date?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_visits_daily_status_id_fkey"
-            columns: ["daily_status_id"]
-            isOneToOne: false
-            referencedRelation: "daily_status"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "site_visits_user_id_fkey"
-            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1336,13 +1428,28 @@ export type Database = {
         }
         Returns: string
       }
+      add_expense_category: {
+        Args: { p_key: string; p_label: string }
+        Returns: undefined
+      }
       can_view_sales_tracker_of: {
         Args: { target: string; uid: string }
         Returns: boolean
       }
+      create_notification: {
+        Args: {
+          p_body: string
+          p_reference_id: string
+          p_title: string
+          p_type: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       deactivate_user: { Args: { p_email: string }; Returns: undefined }
       delete_app_user: { Args: { p_email: string }; Returns: undefined }
       delete_app_user_by_id: { Args: { p_user_id: string }; Returns: undefined }
+      delete_expense_category: { Args: { p_key: string }; Returns: undefined }
       get_active_profiles: {
         Args: never
         Returns: {
@@ -1353,12 +1460,20 @@ export type Database = {
         }[]
       }
       get_user_role: { Args: { uid: string }; Returns: string }
+      is_accountant: { Args: { uid: string }; Returns: boolean }
       is_admin: { Args: { uid: string }; Returns: boolean }
       is_manager_of: {
         Args: { _employee_id: string; _manager_id: string }
         Returns: boolean
       }
       is_strict_admin: { Args: { uid: string }; Returns: boolean }
+      list_active_projects_for_payment_requests: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
       notify_sales_tracker_event: {
         Args: {
           p_body: string
@@ -1371,6 +1486,10 @@ export type Database = {
       reactivate_user: { Args: { p_email: string }; Returns: undefined }
       reset_user_password: {
         Args: { p_email: string; p_new_password: string }
+        Returns: undefined
+      }
+      set_user_expense_tier: {
+        Args: { p_tier: number; p_user_id: string }
         Returns: undefined
       }
       set_user_role: {
