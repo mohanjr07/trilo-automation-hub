@@ -952,6 +952,176 @@ export type Database = {
           },
         ]
       }
+      site_visit_requests: {
+        Row: {
+          contact_person: string | null
+          contact_phone: string | null
+          created_at: string
+          decision_note: string | null
+          id: string
+          location: string
+          notes: string | null
+          planned_at: string
+          purpose: string | null
+          site_name: string
+          site_visit_id: string | null
+          status: string
+          stop_order: number
+          trip_group_id: string
+          user_id: string
+        }
+        Insert: {
+          contact_person?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          decision_note?: string | null
+          id?: string
+          location: string
+          notes?: string | null
+          planned_at?: string
+          purpose?: string | null
+          site_name: string
+          site_visit_id?: string | null
+          status?: string
+          stop_order?: number
+          trip_group_id?: string
+          user_id: string
+        }
+        Update: {
+          contact_person?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          decision_note?: string | null
+          id?: string
+          location?: string
+          notes?: string | null
+          planned_at?: string
+          purpose?: string | null
+          site_name?: string
+          site_visit_id?: string | null
+          status?: string
+          stop_order?: number
+          trip_group_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_visit_requests_site_visit_id_fkey"
+            columns: ["site_visit_id"]
+            isOneToOne: false
+            referencedRelation: "site_visits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_visit_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_visits: {
+        Row: {
+          arrived_at: string | null
+          arrived_latitude: number | null
+          arrived_longitude: number | null
+          contact_person: string | null
+          contact_phone: string | null
+          created_at: string
+          departed_at: string | null
+          departed_latitude: number | null
+          departed_longitude: number | null
+          end_latitude: number | null
+          end_longitude: number | null
+          ended_at: string | null
+          id: string
+          km_end: number | null
+          km_start: number | null
+          location: string
+          notes: string | null
+          purpose: string | null
+          request_id: string | null
+          site_name: string
+          start_latitude: number | null
+          start_longitude: number | null
+          started_at: string | null
+          stop_order: number
+          trip_group_id: string
+          trip_status: string
+          user_id: string
+          visit_date: string
+        }
+        Insert: {
+          arrived_at?: string | null
+          arrived_latitude?: number | null
+          arrived_longitude?: number | null
+          contact_person?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          departed_at?: string | null
+          departed_latitude?: number | null
+          departed_longitude?: number | null
+          end_latitude?: number | null
+          end_longitude?: number | null
+          ended_at?: string | null
+          id?: string
+          km_end?: number | null
+          km_start?: number | null
+          location: string
+          notes?: string | null
+          purpose?: string | null
+          request_id?: string | null
+          site_name: string
+          start_latitude?: number | null
+          start_longitude?: number | null
+          started_at?: string | null
+          stop_order?: number
+          trip_group_id?: string
+          trip_status?: string
+          user_id: string
+          visit_date?: string
+        }
+        Update: {
+          arrived_at?: string | null
+          arrived_latitude?: number | null
+          arrived_longitude?: number | null
+          contact_person?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          departed_at?: string | null
+          departed_latitude?: number | null
+          departed_longitude?: number | null
+          end_latitude?: number | null
+          end_longitude?: number | null
+          ended_at?: string | null
+          id?: string
+          km_end?: number | null
+          km_start?: number | null
+          location?: string
+          notes?: string | null
+          purpose?: string | null
+          request_id?: string | null
+          site_name?: string
+          start_latitude?: number | null
+          start_longitude?: number | null
+          started_at?: string | null
+          stop_order?: number
+          trip_group_id?: string
+          trip_status?: string
+          user_id?: string
+          visit_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_visits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_assignees: {
         Row: {
           assignee_role: string | null
