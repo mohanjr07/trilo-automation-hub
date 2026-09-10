@@ -22,7 +22,13 @@ type PendingRequest = {
   planned_at: string;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+  visit_status: "not_started" | "in_progress" | "completed";
   profiles: { full_name: string | null } | null;
+};
+
+const VISIT_STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
+  in_progress: { label: "Visit in progress", bg: "bg-primary/10", text: "text-primary" },
+  completed: { label: "Visit completed", bg: "bg-success/10", text: "text-success" },
 };
 
 /** Groups pending request rows that belong to the same trip (same
@@ -60,7 +66,7 @@ export default function SiteVisitApprovals() {
       const { data, error } = await supabase
         .from("site_visit_requests")
         .select(
-          "id, user_id, trip_group_id, stop_order, site_name, location, contact_person, contact_phone, purpose, notes, planned_at, status, created_at, profiles!site_visit_requests_user_id_fkey(full_name)"
+          "id, user_id, trip_group_id, stop_order, site_name, location, contact_person, contact_phone, purpose, notes, planned_at, status, created_at, visit_status, profiles!site_visit_requests_user_id_fkey(full_name)"
         )
         .eq("status", "pending")
         .order("planned_at", { ascending: true });
@@ -126,9 +132,18 @@ export default function SiteVisitApprovals() {
                     </p>
                     {group.length === 1 && <p className="text-sm text-ink-muted">{primary.location}</p>}
                   </div>
-                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                    Planned {format(new Date(primary.planned_at), "d MMM, h:mm a")}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                      Planned {format(new Date(primary.planned_at), "d MMM, h:mm a")}
+                    </span>
+                    {VISIT_STATUS_META[primary.visit_status] && (
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${VISIT_STATUS_META[primary.visit_status].bg} ${VISIT_STATUS_META[primary.visit_status].text}`}
+                      >
+                        {VISIT_STATUS_META[primary.visit_status].label}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {group.length > 1 ? (
