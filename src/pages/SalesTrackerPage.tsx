@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square, Pencil } from "lucide-react";
+import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -73,6 +73,7 @@ function MySiteVisits() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [editTrip, setEditTrip] = useState<EditSiteVisitTrip | null>(null);
+  const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
 
   const { data: rows = [] } = useQuery({
     queryKey: ["site-visit-requests", "mine", user?.id],
@@ -116,6 +117,20 @@ function MySiteVisits() {
       toast.success(visitStatus === "in_progress" ? "Visit started" : "Visit ended");
     },
     onError: () => toast.error("Couldn't update the visit — it may not be approved yet"),
+  });
+
+  const deleteTrip = useMutation({
+    mutationFn: async (tripGroupId: string) => {
+      const { error } = await supabase.from("site_visit_requests").delete().eq("trip_group_id", tripGroupId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["site-visit-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-site-visits"] });
+      toast.success("Site visit deleted");
+      setDeletingTripId(null);
+    },
+    onError: () => toast.error("Couldn't delete this visit"),
   });
 
   if (groups.length === 0) {
@@ -194,32 +209,58 @@ function MySiteVisits() {
                 )}
               </div>
             )}
-            <div className="mt-2.5">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="gap-1.5 text-ink-secondary"
-                onClick={() =>
-                  setEditTrip({
-                    tripGroupId: primary.trip_group_id,
-                    plannedAt: primary.planned_at,
-                    visitStatus: primary.visit_status,
-                    stops: group.map((s) => ({
-                      id: s.id,
-                      siteName: s.site_name,
-                      location: s.location,
-                      personToMeet: s.contact_person ?? "",
-                      contactPhone: s.contact_phone ?? "",
-                      purpose: s.purpose ?? "",
-                      notes: s.notes ?? "",
-                    })),
-                  })
-                }
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit details
-              </Button>
-            </div>
+            {deletingTripId === primary.trip_group_id ? (
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-muted">Delete this site visit? This can't be undone.</span>
+                <Button size="sm" variant="outline" onClick={() => setDeletingTripId(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deleteTrip.isPending}
+                  onClick={() => deleteTrip.mutate(primary.trip_group_id)}
+                >
+                  {deleteTrip.isPending ? "Deleting..." : "Confirm delete"}
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5 text-ink-secondary"
+                  onClick={() =>
+                    setEditTrip({
+                      tripGroupId: primary.trip_group_id,
+                      plannedAt: primary.planned_at,
+                      visitStatus: primary.visit_status,
+                      stops: group.map((s) => ({
+                        id: s.id,
+                        siteName: s.site_name,
+                        location: s.location,
+                        personToMeet: s.contact_person ?? "",
+                        contactPhone: s.contact_phone ?? "",
+                        purpose: s.purpose ?? "",
+                        notes: s.notes ?? "",
+                      })),
+                    })
+                  }
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit details
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                  onClick={() => setDeletingTripId(primary.trip_group_id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              </div>
+            )}
           </div>
         );
       })}
@@ -236,6 +277,9 @@ type TeamRequestStop = MyRequestStop & { profiles: { full_name: string | null } 
  * pending, approved, rejected — and any visit progress), not just the
  * pending-approval queue. Read-only. */
 function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
+  const queryClient = useQueryClient();
+  const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
+
   const { data: rows = [] } = useQuery({
     queryKey: ["site-visit-requests", "team", teamIds],
     queryFn: async () => {
@@ -264,6 +308,20 @@ function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
       .map((g) => [...g].sort((a, b) => a.stop_order - b.stop_order))
       .sort((a, b) => new Date(b[0].planned_at).getTime() - new Date(a[0].planned_at).getTime());
   }, [rows]);
+
+  const deleteTrip = useMutation({
+    mutationFn: async (tripGroupId: string) => {
+      const { error } = await supabase.from("site_visit_requests").delete().eq("trip_group_id", tripGroupId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["site-visit-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-site-visits"] });
+      toast.success("Site visit deleted");
+      setDeletingTripId(null);
+    },
+    onError: () => toast.error("Couldn't delete this visit"),
+  });
 
   if (groups.length === 0) {
     return <EmptyState icon={MapPin} title="No team site visits yet" description="Requests from your team will show up here." />;
@@ -307,6 +365,34 @@ function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
                 Started {format(new Date(primary.visit_started_at), "d MMM, h:mm a")}
                 {primary.visit_ended_at ? ` · Ended ${format(new Date(primary.visit_ended_at), "d MMM, h:mm a")}` : ""}
               </p>
+            )}
+            {deletingTripId === primary.trip_group_id ? (
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-muted">Delete this site visit? This can't be undone.</span>
+                <Button size="sm" variant="outline" onClick={() => setDeletingTripId(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deleteTrip.isPending}
+                  onClick={() => deleteTrip.mutate(primary.trip_group_id)}
+                >
+                  {deleteTrip.isPending ? "Deleting..." : "Confirm delete"}
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-2.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                  onClick={() => setDeletingTripId(primary.trip_group_id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              </div>
             )}
           </div>
         );
