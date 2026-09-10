@@ -21,6 +21,7 @@ const PURPOSE_OPTIONS = [
 ] as const;
 
 type SiteStop = {
+  id?: string; // present only when editing an existing stop
   siteName: string;
   location: string;
   personToMeet: string;
@@ -38,6 +39,12 @@ function minPlannedAtLocalValue() {
   return format(new Date(), "yyyy-MM-dd'T'HH:mm");
 }
 
+export type EditSiteVisitTrip = {
+  tripGroupId: string;
+  plannedAt: string; // ISO
+  stops: Array<Omit<SiteStop, "id"> & { id: string }>;
+};
+
 /**
  * A sales rep requests approval for a site visit here. Same-day visits are
  * allowed (shown pending/orange on the calendar until approved); a visit
@@ -47,14 +54,34 @@ function minPlannedAtLocalValue() {
  * Supports multiple stops in one trip (e.g. Client A -> Client B -> Client
  * C) — all stops share the same planned date/time and are
  * approved/rejected together as a group.
+ *
+ * Pass `editTrip` to reopen this form pre-filled for an existing trip
+ * instead of creating a new request — the rep can change any field
+ * (including adding/removing sites) at any point, even after the visit
+ * has started.
  */
-export default function RequestSiteVisitModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function RequestSiteVisitModal({
+  open,
+  onClose,
+  editTrip,
+}: {
+  open: boolean;
+  onClose: () => void;
+  editTrip?: EditSiteVisitTrip;
+}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [sites, setSites] = useState<SiteStop[]>([emptyStop()]);
-  const [plannedAt, setPlannedAt] = useState("");
+  const isEdit = !!editTrip;
+
+  const [sites, setSites] = useState<SiteStop[]>(() =>
+    editTrip ? editTrip.stops.map((s) => ({ ...s })) : [emptyStop()]
+  );
+  const [plannedAt, setPlannedAt] = useState(() =>
+    editTrip ? format(new Date(editTrip.plannedAt), "yyyy-MM-dd'T'HH:mm") : ""
+  );
 
   const reset = () => {
+    if (editTrip) return; // don't wipe an edit form back to a blank one
     setSites([emptyStop()]);
     setPlannedAt("");
   };
@@ -68,6 +95,42 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
   const submit = useMutation({
     mutationFn: async () => {
       const plannedAtIso = new Date(plannedAt).toISOString();
+
+      if (editTrip) {
+        const originalIds = editTrip.stops.map((s) => s.id);
+        const keptIds = sites.map((s) => s.id).filter((id): id is string => !!id);
+        const removedIds = originalIds.filter((id) => !keptIds.includes(id));
+
+        for (const [i, s] of sites.entries()) {
+          const payload = {
+            site_name: s.siteName.trim(),
+            location: s.location.trim(),
+            contact_person: s.personToMeet.trim() || null,
+            contact_phone: s.contactPhone.trim() || null,
+            purpose: s.purpose || null,
+            notes: s.notes.trim() || null,
+            planned_at: plannedAtIso,
+            stop_order: i + 1,
+          };
+          if (s.id) {
+            const { error } = await supabase.from("site_visit_requests").update(payload).eq("id", s.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase.from("site_visit_requests").insert({
+              ...payload,
+              user_id: user!.id,
+              trip_group_id: editTrip.tripGroupId,
+            });
+            if (error) throw error;
+          }
+        }
+        if (removedIds.length > 0) {
+          const { error } = await supabase.from("site_visit_requests").delete().in("id", removedIds);
+          if (error) throw error;
+        }
+        return;
+      }
+
       const tripGroupId = crypto.randomUUID();
       const rows = sites.map((s, i) => ({
         user_id: user!.id,
@@ -87,7 +150,7 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["site-visit-requests"] });
       queryClient.invalidateQueries({ queryKey: ["calendar-site-visits"] });
-      toast.success("Request sent — your team lead has been notified.");
+      toast.success(isEdit ? "Visit updated" : "Request sent — your team lead has been notified.");
       reset();
       onClose();
     },
@@ -96,7 +159,7 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
       if (message.toLowerCase().includes("past")) {
         toast.error("Planned visit date can't be in the past");
       } else {
-        toast.error("Couldn't send the request");
+        toast.error(isEdit ? "Couldn't save changes" : "Couldn't send the request");
       }
     },
   });
@@ -120,7 +183,7 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
             className="relative w-full md:max-w-[560px] max-h-[92vh] overflow-y-auto rounded-t-modal md:rounded-modal bg-card p-5 sm:p-6 shadow-modal"
           >
             <div className="flex items-center justify-between mb-5">
-              <h2 className="font-heading text-xl font-bold text-ink-primary">Request Site Visit</h2>
+              <h2 className="font-heading text-xl font-bold text-ink-primary">{isEdit ? "Edit Site Visit" : "Request Site Visit"}</h2>
               <button onClick={onClose} className="text-ink-muted hover:text-ink-primary">
                 <X className="h-5 w-5" />
               </button>
@@ -230,7 +293,9 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
               </div>
 
               <p className="text-xs text-ink-muted">
-                Your team lead will be notified and needs to approve this visit.
+                {isEdit
+                  ? "Changes save immediately."
+                  : "Your team lead will be notified and needs to approve this visit."}
               </p>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -238,8 +303,8 @@ export default function RequestSiteVisitModal({ open, onClose }: { open: boolean
                   Cancel
                 </Button>
                 <Button type="submit" disabled={submit.isPending} className="gap-1.5">
-                  <Plus className="h-4 w-4" />
-                  {submit.isPending ? "Sending..." : "Send request"}
+                  {!isEdit && <Plus className="h-4 w-4" />}
+                  {submit.isPending ? "Saving..." : isEdit ? "Save changes" : "Send request"}
                 </Button>
               </div>
             </form>
