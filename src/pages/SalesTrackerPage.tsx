@@ -231,6 +231,91 @@ function MySiteVisits() {
   );
 }
 
+type TeamRequestStop = MyRequestStop & { profiles: { full_name: string | null } | null };
+
+/** Team-head-facing history: ALL of the team's site visits (any status —
+ * pending, approved, rejected — and any visit progress), not just the
+ * pending-approval queue. Read-only. */
+function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
+  const { data: rows = [] } = useQuery({
+    queryKey: ["site-visit-requests", "team", teamIds],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("site_visit_requests")
+        .select(
+          "id, trip_group_id, stop_order, site_name, location, contact_person, contact_phone, purpose, notes, planned_at, status, decision_note, visit_status, visit_started_at, visit_ended_at, profiles!site_visit_requests_user_id_fkey(full_name)"
+        )
+        .in("user_id", teamIds)
+        .order("planned_at", { ascending: false })
+        .limit(150);
+      if (error) throw error;
+      return (data ?? []) as unknown as TeamRequestStop[];
+    },
+    enabled: teamIds.length > 0,
+  });
+
+  const groups = useMemo(() => {
+    const byGroup = new Map<string, TeamRequestStop[]>();
+    for (const r of rows) {
+      const arr = byGroup.get(r.trip_group_id) ?? [];
+      arr.push(r);
+      byGroup.set(r.trip_group_id, arr);
+    }
+    return Array.from(byGroup.values())
+      .map((g) => [...g].sort((a, b) => a.stop_order - b.stop_order))
+      .sort((a, b) => new Date(b[0].planned_at).getTime() - new Date(a[0].planned_at).getTime());
+  }, [rows]);
+
+  if (groups.length === 0) {
+    return <EmptyState icon={MapPin} title="No team site visits yet" description="Requests from your team will show up here." />;
+  }
+
+  return (
+    <div className="space-y-2">
+      {groups.map((group) => {
+        const primary = group[0];
+        const meta = REQUEST_STATUS_META[primary.status];
+        const visitMeta = VISIT_STATUS_META[primary.visit_status];
+        return (
+          <div key={primary.trip_group_id} className="rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-ink-primary">
+                  {primary.profiles?.full_name ?? "A team member"} →{" "}
+                  {group.length > 1 ? `${group.length} sites` : primary.site_name}
+                </p>
+                <p className="text-xs text-ink-muted">
+                  {format(new Date(primary.planned_at), "d MMM yyyy, h:mm a")}
+                  {primary.purpose ? ` · ${primary.purpose}` : ""}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", meta.bg, meta.text)}>
+                  {meta.label}
+                </span>
+                {visitMeta && (
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", visitMeta.bg, visitMeta.text)}>
+                    {visitMeta.label}
+                  </span>
+                )}
+              </div>
+            </div>
+            {primary.status === "rejected" && primary.decision_note && (
+              <p className="mt-1.5 text-xs text-ink-muted">Reason: {primary.decision_note}</p>
+            )}
+            {primary.visit_started_at && (
+              <p className="mt-1.5 text-xs text-ink-muted">
+                Started {format(new Date(primary.visit_started_at), "d MMM, h:mm a")}
+                {primary.visit_ended_at ? ` · Ended ${format(new Date(primary.visit_ended_at), "d MMM, h:mm a")}` : ""}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
   const [requestOpen, setRequestOpen] = useState(false);
@@ -354,6 +439,13 @@ export default function SalesTrackerPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {isTeamHead && teamIds.length > 0 && (
+        <div className="rounded-xl sm:rounded-card border border-border bg-card p-3.5 sm:p-5">
+          <h2 className="mb-3 sm:mb-4 font-heading text-sm sm:text-lg font-semibold text-ink-primary">Team site visits</h2>
+          <TeamSiteVisits teamIds={teamIds} />
         </div>
       )}
 
