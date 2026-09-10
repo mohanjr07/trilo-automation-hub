@@ -6,7 +6,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
 import StatCard from "@/components/StatCard";
-import UserAvatar from "@/components/UserAvatar";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import RequestSiteVisitModal, { type EditSiteVisitTrip } from "@/components/RequestSiteVisitModal";
@@ -377,8 +376,6 @@ export default function SalesTrackerPage() {
   const onLeaveToday = teamStatusToday.filter((s) => s.status === "leave").length;
   const reportedToday = teamStatusToday.length;
 
-  const team = useMemo(() => people.filter((p) => teamIds.includes(p.id)), [people, teamIds]);
-
   return (
     <AnimatedPage className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -410,37 +407,6 @@ export default function SalesTrackerPage() {
       )}
 
       {isTeamHead && <SiteVisitApprovals />}
-
-      {isTeamHead && (
-        <div className="rounded-xl sm:rounded-card border border-border bg-card p-3.5 sm:p-5">
-          <h2 className="mb-3 sm:mb-4 font-heading text-sm sm:text-lg font-semibold text-ink-primary">Team status — today</h2>
-          {team.length === 0 ? (
-            <EmptyState icon={UserIcon} title="No team members yet" description="Assign team members to see their daily status here." />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
-              {team.map((member) => {
-                const status = teamStatusToday.find((s) => s.user_id === member.id);
-                const meta = status ? STATUS_META[status.status] : null;
-                return (
-                  <div key={member.id} className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 sm:px-3 sm:py-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <UserAvatar name={member.full_name} avatarUrl={member.avatar_url} size="sm" />
-                      <p className="truncate text-xs sm:text-sm font-medium text-ink-primary">{member.full_name}</p>
-                    </div>
-                    {meta ? (
-                      <span className={cn("flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-medium", meta.bg, meta.text)}>
-                        <meta.icon className="h-3 w-3" /> {meta.label}
-                      </span>
-                    ) : (
-                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] sm:text-xs font-medium text-ink-muted">Not checked in</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
 
       {isTeamHead && teamIds.length > 0 && (
         <div className="rounded-xl sm:rounded-card border border-border bg-card p-3.5 sm:p-5">
