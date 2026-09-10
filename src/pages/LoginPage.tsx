@@ -164,17 +164,12 @@ export default function LoginPage() {
           className="w-full max-w-[420px] mx-auto rounded-2xl sm:rounded-modal bg-card p-6 sm:p-8 shadow-card sm:shadow-modal border border-border/50"
         >
           <div className="mb-6 sm:mb-8 text-center">
-            <picture>
-              <source
-                srcSet={`${import.meta.env.BASE_URL}logo-dark.png`}
-                media="(prefers-color-scheme: dark)"
-              />
-              <img
-                src={`${import.meta.env.BASE_URL}logo.png`}
-                alt="Magic Aisles"
-                className="mx-auto mb-4 h-20 w-auto max-w-[220px] object-contain dark:hidden"
-              />
-            </picture>
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="Magic Aisles"
+              className="mx-auto mb-4 h-20 w-auto max-w-[220px] object-contain dark:hidden"
+            />
+
             <img
               src={`${import.meta.env.BASE_URL}logo-dark.png`}
               alt="Magic Aisles"
