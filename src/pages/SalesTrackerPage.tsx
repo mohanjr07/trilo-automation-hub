@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square } from "lucide-react";
+import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -9,7 +9,7 @@ import StatCard from "@/components/StatCard";
 import UserAvatar from "@/components/UserAvatar";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
-import RequestSiteVisitModal from "@/components/RequestSiteVisitModal";
+import RequestSiteVisitModal, { type EditSiteVisitTrip } from "@/components/RequestSiteVisitModal";
 import SiteVisitApprovals from "@/components/SiteVisitApprovals";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -46,7 +46,10 @@ type MyRequestStop = {
   stop_order: number;
   site_name: string;
   location: string;
+  contact_person: string | null;
+  contact_phone: string | null;
   purpose: string | null;
+  notes: string | null;
   planned_at: string;
   status: "pending" | "approved" | "rejected";
   decision_note: string | null;
@@ -70,6 +73,7 @@ const VISIT_STATUS_META: Record<string, { label: string; bg: string; text: strin
 function MySiteVisits() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [editTrip, setEditTrip] = useState<EditSiteVisitTrip | null>(null);
 
   const { data: rows = [] } = useQuery({
     queryKey: ["site-visit-requests", "mine", user?.id],
@@ -77,7 +81,7 @@ function MySiteVisits() {
       const { data, error } = await supabase
         .from("site_visit_requests")
         .select(
-          "id, trip_group_id, stop_order, site_name, location, purpose, planned_at, status, decision_note, visit_status, visit_started_at, visit_ended_at"
+          "id, trip_group_id, stop_order, site_name, location, contact_person, contact_phone, purpose, notes, planned_at, status, decision_note, visit_status, visit_started_at, visit_ended_at"
         )
         .eq("user_id", user!.id)
         .order("planned_at", { ascending: false })
@@ -191,9 +195,37 @@ function MySiteVisits() {
                 )}
               </div>
             )}
+            <div className="mt-2.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1.5 text-ink-secondary"
+                onClick={() =>
+                  setEditTrip({
+                    tripGroupId: primary.trip_group_id,
+                    plannedAt: primary.planned_at,
+                    stops: group.map((s) => ({
+                      id: s.id,
+                      siteName: s.site_name,
+                      location: s.location,
+                      personToMeet: s.contact_person ?? "",
+                      contactPhone: s.contact_phone ?? "",
+                      purpose: s.purpose ?? "",
+                      notes: s.notes ?? "",
+                    })),
+                  })
+                }
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit details
+              </Button>
+            </div>
           </div>
         );
       })}
+      {editTrip && (
+        <RequestSiteVisitModal open={!!editTrip} onClose={() => setEditTrip(null)} editTrip={editTrip} />
+      )}
     </div>
   );
 }
