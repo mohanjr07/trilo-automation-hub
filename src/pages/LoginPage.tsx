@@ -164,15 +164,26 @@ export default function LoginPage() {
           className="w-full max-w-[420px] mx-auto rounded-2xl sm:rounded-modal bg-card p-6 sm:p-8 shadow-card sm:shadow-modal border border-border/50"
         >
           <div className="mb-6 sm:mb-8 text-center">
+            <picture>
+              <source
+                srcSet={`${import.meta.env.BASE_URL}logo-dark.png`}
+                media="(prefers-color-scheme: dark)"
+              />
+              <img
+                src={`${import.meta.env.BASE_URL}logo.png`}
+                alt="Magic Aisles"
+                className="mx-auto mb-4 h-20 w-auto max-w-[220px] object-contain dark:hidden"
+              />
+            </picture>
             <img
-              src={`${import.meta.env.BASE_URL}favicon.png`}
-              alt="Trilo Automation"
-              className="mx-auto mb-4 object-contain"
-              style={{ width: "72px", height: "72px" }}
+              src={`${import.meta.env.BASE_URL}logo-dark.png`}
+              alt="Magic Aisles"
+              className="mx-auto mb-4 hidden h-20 w-auto max-w-[220px] object-contain dark:block"
             />
             <h1 className="font-heading text-2xl sm:text-3xl font-bold text-ink-primary">Task Flow</h1>
             <p className="mt-1 text-xs sm:text-sm text-ink-muted">Organize work. Track everything.</p>
           </div>
+
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
