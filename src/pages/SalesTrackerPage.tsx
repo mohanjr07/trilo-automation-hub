@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Building2, MapPin, Palmtree, User as UserIcon, X, Plus, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Building2, MapPin, Palmtree, User as UserIcon, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -11,8 +11,7 @@ import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import RequestSiteVisitModal from "@/components/RequestSiteVisitModal";
 import SiteVisitApprovals from "@/components/SiteVisitApprovals";
-import { motion, AnimatePresence } from "framer-motion";
-import { toast } from "sonner";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
@@ -51,76 +50,6 @@ type MyRequestStop = {
   status: "pending" | "approved" | "rejected";
   decision_note: string | null;
 };
-
-/** Lets the signed-in user mark their own status (office/site/leave) for
- * today — a plain row insert/update into daily_status. No GPS, no site
- * details, no KM — just the marker. */
-function MarkStatusModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const markStatus = useMutation({
-    mutationFn: async (status: "office" | "site" | "leave") => {
-      const { data: existing, error: fetchError } = await supabase
-        .from("daily_status")
-        .select("id")
-        .eq("user_id", user!.id)
-        .eq("status_date", today())
-        .maybeSingle();
-      if (fetchError) throw fetchError;
-
-      if (existing) {
-        const { error } = await supabase.from("daily_status").update({ status }).eq("id", existing.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("daily_status").insert({ user_id: user!.id, status_date: today(), status });
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["daily-status-today"] });
-      queryClient.invalidateQueries({ queryKey: ["sales-tracker", "team-status"] });
-      toast.success("Status updated");
-      onClose();
-    },
-    onError: () => toast.error("Couldn't update your status"),
-  });
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-ink-primary/30" onClick={onClose} />
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="relative w-full md:max-w-[420px] rounded-t-modal md:rounded-modal bg-card p-5 sm:p-6 shadow-modal"
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-heading text-xl font-bold text-ink-primary">Mark today's status</h2>
-              <button onClick={onClose} className="text-ink-muted hover:text-ink-primary"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="space-y-2">
-              {STATUS_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => markStatus.mutate(opt.value)}
-                  disabled={markStatus.isPending}
-                  className="flex w-full items-center gap-3 rounded-lg border border-border p-3.5 text-left transition hover:border-primary/40 hover:bg-primary/5 disabled:opacity-60"
-                >
-                  <opt.icon className="h-5 w-5 text-ink-secondary" />
-                  <span className="font-medium text-ink-primary">{opt.label}</span>
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-}
 
 const REQUEST_STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
   pending: { label: "Pending approval", bg: "bg-warning-light", text: "text-warning" },
@@ -196,7 +125,6 @@ function MySiteVisits() {
 
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
-  const [markOpen, setMarkOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
@@ -277,9 +205,6 @@ export default function SalesTrackerPage() {
             <Plus className="h-4 w-4" />
             Request Site Visit
           </Button>
-          <Button onClick={() => setMarkOpen(true)} className="gap-1.5 h-9 sm:h-10">
-            Mark my status
-          </Button>
         </div>
       </div>
 
@@ -329,7 +254,6 @@ export default function SalesTrackerPage() {
         <MySiteVisits />
       </div>
 
-      <MarkStatusModal open={markOpen} onClose={() => setMarkOpen(false)} />
       <RequestSiteVisitModal open={requestOpen} onClose={() => setRequestOpen(false)} />
     </AnimatedPage>
   );
