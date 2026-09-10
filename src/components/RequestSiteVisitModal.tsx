@@ -42,6 +42,7 @@ function minPlannedAtLocalValue() {
 export type EditSiteVisitTrip = {
   tripGroupId: string;
   plannedAt: string; // ISO
+  visitStatus: "not_started" | "in_progress" | "completed";
   stops: Array<Omit<SiteStop, "id"> & { id: string }>;
 };
 
@@ -101,6 +102,15 @@ export default function RequestSiteVisitModal({
         const keptIds = sites.map((s) => s.id).filter((id): id is string => !!id);
         const removedIds = originalIds.filter((id) => !keptIds.includes(id));
 
+        // Adding a new site to a trip that was already started/completed
+        // means there's now an unvisited stop, so the whole trip goes back
+        // to "not started" — Start Visit / End Visit become available again.
+        const hasNewStop = sites.some((s) => !s.id);
+        const reopensVisit = hasNewStop && editTrip.visitStatus !== "not_started";
+        const visitResetFields = reopensVisit
+          ? { visit_status: "not_started" as const, visit_started_at: null, visit_ended_at: null }
+          : {};
+
         for (const [i, s] of sites.entries()) {
           const payload = {
             site_name: s.siteName.trim(),
@@ -111,6 +121,7 @@ export default function RequestSiteVisitModal({
             notes: s.notes.trim() || null,
             planned_at: plannedAtIso,
             stop_order: i + 1,
+            ...visitResetFields,
           };
           if (s.id) {
             const { error } = await supabase.from("site_visit_requests").update(payload).eq("id", s.id);
@@ -127,6 +138,9 @@ export default function RequestSiteVisitModal({
         if (removedIds.length > 0) {
           const { error } = await supabase.from("site_visit_requests").delete().in("id", removedIds);
           if (error) throw error;
+        }
+        if (reopensVisit) {
+          toast.message("This trip has a new site, so Start/End Visit are available again.");
         }
         return;
       }
