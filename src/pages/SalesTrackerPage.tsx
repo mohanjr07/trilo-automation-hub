@@ -204,6 +204,7 @@ function MySiteVisits() {
                   setEditTrip({
                     tripGroupId: primary.trip_group_id,
                     plannedAt: primary.planned_at,
+                    visitStatus: primary.visit_status,
                     stops: group.map((s) => ({
                       id: s.id,
                       siteName: s.site_name,
