@@ -225,7 +225,7 @@ export default function OrganisationFlowPage() {
     <AnimatedPage>
       {/* Header */}
       <div
-        className="flex items-center justify-between mb-6 gap-3 flex-wrap"
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3"
         style={fullBleed}
       >
         <div>

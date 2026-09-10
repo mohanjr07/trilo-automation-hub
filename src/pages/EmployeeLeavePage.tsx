@@ -65,14 +65,14 @@ export default function EmployeeLeavePage() {
 
   return (
     <AnimatedPage>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-heading text-[28px] font-bold text-ink-primary">Leave & Permissions</h1>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Leave & Permissions</h1>
+        <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start sm:self-auto">
           <Plus className="h-4 w-4" /> New Request
         </Button>
       </div>
 
-      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-3 gap-4 mb-6">
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
         <StatCard title="Pending" value={pending} icon={Clock} iconBg="bg-warning-light" iconColor="text-warning" />
         <StatCard title="Total" value={requests.length} icon={CalendarIcon} />

@@ -142,9 +142,9 @@ export default function ReportsPage() {
 
   return (
     <AnimatedPage>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-heading text-[28px] font-bold text-ink-primary">Reports</h1>
-        <div className="flex gap-1 rounded-lg border border-border p-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Reports</h1>
+        <div className="flex gap-1 rounded-lg border border-border p-1 self-start sm:self-auto">
           {(["week", "month", "quarter"] as const).map((r) => (
             <button key={r} onClick={() => setRange(r)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors ${range === r ? "bg-primary text-primary-foreground" : "text-ink-secondary hover:bg-muted"}`}>
@@ -163,7 +163,7 @@ export default function ReportsPage() {
           </Button>
         </div>
 
-        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard title="Total Tasks" value={totalTasks} icon={CheckCircle2} />
           <StatCard title="Completion Rate" value={completionRate} subtitle="%" icon={BarChart3} iconBg="bg-success-light" iconColor="text-success" />
           <StatCard title="Avg Days" value={avgDays} subtitle="to complete" icon={Clock} iconBg="bg-accent-light" iconColor="text-primary" />
@@ -298,7 +298,7 @@ export default function ReportsPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-heading text-xl font-semibold text-ink-primary">Leave & Permissions</h2>
         </div>
-        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-3 gap-4 mb-6">
+        <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <StatCard title="Total Requests" value={totalLeave} icon={Calendar} />
           <StatCard title="Approval Rate" value={approvalRate} subtitle="%" icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
           <StatCard title="Most Common" value={0} subtitle={mostCommonType} icon={BarChart3} iconBg="bg-purple-light" iconColor="text-purple" />

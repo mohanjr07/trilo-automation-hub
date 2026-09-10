@@ -372,9 +372,9 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
   return (
     <AnimatedPage>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-heading text-[28px] font-bold text-ink-primary">{pageTitle}</h1>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">{pageTitle}</h1>
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Board / List toggle */}
           <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-card">
             <button
@@ -449,7 +449,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
 
       {/* Content */}
       {isLoading ? (
-        <div className={viewMode === "board" ? "grid grid-cols-2 xl:grid-cols-4 gap-4" : "space-y-3"}>
+        <div className={viewMode === "board" ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" : "space-y-3"}>
           {Array.from({ length: viewMode === "board" ? 4 : 5 }).map((_, i) => (
             <div key={i} className="h-40 rounded-xl bg-muted animate-pulse" />
           ))}

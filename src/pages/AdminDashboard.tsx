@@ -101,7 +101,7 @@ export default function AdminDashboard() {
         <StatCard title="Overdue" value={overdue} subtitle={overdue > 0 ? "Needs attention" : "All on track"} icon={AlertTriangle} iconBg="bg-destructive-light" iconColor="text-destructive" />
       </motion.div>
 
-      <div className="grid lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
         <div className="lg:col-span-3 rounded-card bg-card p-5 shadow-card">
           <h3 className="text-sm font-semibold text-ink-primary mb-4">Task Completion Trend</h3>
           <ResponsiveContainer width="100%" height={220}>

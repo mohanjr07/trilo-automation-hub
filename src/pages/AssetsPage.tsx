@@ -202,12 +202,12 @@ export default function AssetsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-ink-primary">Assets</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-ink-primary">Assets</h2>
           <p className="text-sm text-ink-muted mt-0.5">Track company assets and their holders</p>
         </div>
         {isAdmin && (
@@ -218,7 +218,7 @@ export default function AssetsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Total Assets",  value: stats.total,       icon: Package,      color: "text-primary",    bg: "bg-primary/10" },
           { label: "Available",     value: stats.available,   icon: CheckCircle2, color: "text-green-600",  bg: "bg-green-100 dark:bg-green-900/30" },

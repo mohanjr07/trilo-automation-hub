@@ -222,7 +222,7 @@ export default function DocumentsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -311,7 +311,8 @@ export default function DocumentsPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-ink-muted text-xs uppercase tracking-wide">
                 <th className="text-left px-5 py-3 font-medium">Document</th>
@@ -380,6 +381,7 @@ export default function DocumentsPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

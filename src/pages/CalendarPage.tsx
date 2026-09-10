@@ -209,9 +209,9 @@ export default function CalendarPage() {
 
   return (
     <AnimatedPage>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-heading text-[28px] font-bold text-ink-primary">Calendar</h1>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Calendar</h1>
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Filter dropdown */}
           <Select value={filter} onValueChange={setFilter}>
             <SelectTrigger className="w-[160px] h-9">

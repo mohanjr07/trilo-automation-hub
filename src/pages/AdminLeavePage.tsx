@@ -165,12 +165,12 @@ export default function AdminLeavePage() {
 
   return (
     <AnimatedPage>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-heading text-[28px] font-bold text-ink-primary">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">
           Leave & Permissions {pending > 0 && <span className="text-sm font-body bg-warning-light text-warning px-2 py-0.5 rounded-pill ml-2">{pending} pending</span>}
         </h1>
         {isStrictAdmin && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button onClick={() => setShowExport(true)} size="sm" variant="outline">
               <FileSpreadsheet className="h-4 w-4 mr-1.5" /> Export to Excel
             </Button>
@@ -188,7 +188,7 @@ export default function AdminLeavePage() {
         <MyLeaveSection myRequests={myRequests} onRequestLeave={() => setShowRequestLeave(true)} />
       ) : (
       <>
-      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard title="Total" value={visibleRequests.length} icon={CalendarIcon} />
         <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
         <StatCard title="Rejected" value={rejected} icon={XCircle} iconBg="bg-destructive-light" iconColor="text-destructive" />
@@ -762,7 +762,7 @@ function MyLeaveSection({ myRequests, onRequestLeave }: { myRequests: any[]; onR
       <p className="text-xs text-ink-muted mb-4 bg-warning-light text-warning rounded-lg px-3 py-2">
         Your leave requests require <strong>Super Admin</strong> approval.
       </p>
-      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-3 gap-4 mb-6">
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard title="Approved" value={approved} icon={CheckCircle2} iconBg="bg-success-light" iconColor="text-success" />
         <StatCard title="Pending" value={pending} icon={Clock} iconBg="bg-warning-light" iconColor="text-warning" />
         <StatCard title="Total" value={myRequests.length} icon={CalendarIcon} />

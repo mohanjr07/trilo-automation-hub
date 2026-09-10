@@ -71,9 +71,9 @@ export default function NotificationsPage() {
 
   return (
     <AnimatedPage>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div className="flex items-center gap-3">
-          <h1 className="font-heading text-[28px] font-bold text-ink-primary">Notifications</h1>
+          <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Notifications</h1>
           {unreadCount > 0 && (
             <span className="text-xs font-medium bg-destructive text-destructive-foreground px-2 py-0.5 rounded-pill">{unreadCount}</span>
           )}
