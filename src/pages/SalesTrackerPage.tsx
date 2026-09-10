@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Building2, MapPin, Palmtree, User as UserIcon, X } from "lucide-react";
+import { Building2, MapPin, Palmtree, User as UserIcon, X, Plus, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -9,6 +9,8 @@ import StatCard from "@/components/StatCard";
 import UserAvatar from "@/components/UserAvatar";
 import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
+import RequestSiteVisitModal from "@/components/RequestSiteVisitModal";
+import SiteVisitApprovals from "@/components/SiteVisitApprovals";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,18 @@ type Profile = {
 };
 
 type DailyStatus = { id: string; user_id: string; status_date: string; status: string; created_at: string };
+
+type MyRequestStop = {
+  id: string;
+  trip_group_id: string;
+  stop_order: number;
+  site_name: string;
+  location: string;
+  purpose: string | null;
+  planned_at: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+};
 
 /** Lets the signed-in user mark their own status (office/site/leave) for
  * today — a plain row insert/update into daily_status. No GPS, no site
@@ -108,9 +122,82 @@ function MarkStatusModal({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
+const REQUEST_STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
+  pending: { label: "Pending approval", bg: "bg-warning-light", text: "text-warning" },
+  approved: { label: "Approved", bg: "bg-success/10", text: "text-success" },
+  rejected: { label: "Rejected", bg: "bg-destructive/10", text: "text-destructive" },
+};
+
+/** The signed-in user's own recent site-visit requests, grouped by trip. */
+function MySiteVisits() {
+  const { user } = useAuth();
+
+  const { data: rows = [] } = useQuery({
+    queryKey: ["site-visit-requests", "mine", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("site_visit_requests")
+        .select("id, trip_group_id, stop_order, site_name, location, purpose, planned_at, status, decision_note")
+        .eq("user_id", user!.id)
+        .order("planned_at", { ascending: false })
+        .limit(60);
+      if (error) throw error;
+      return (data ?? []) as MyRequestStop[];
+    },
+    enabled: !!user,
+  });
+
+  const groups = useMemo(() => {
+    const byGroup = new Map<string, MyRequestStop[]>();
+    for (const r of rows) {
+      const arr = byGroup.get(r.trip_group_id) ?? [];
+      arr.push(r);
+      byGroup.set(r.trip_group_id, arr);
+    }
+    return Array.from(byGroup.values())
+      .map((g) => [...g].sort((a, b) => a.stop_order - b.stop_order))
+      .sort((a, b) => new Date(b[0].planned_at).getTime() - new Date(a[0].planned_at).getTime());
+  }, [rows]);
+
+  if (groups.length === 0) {
+    return <EmptyState icon={MapPin} title="No site visits yet" description="Request a site visit to see it here." />;
+  }
+
+  return (
+    <div className="space-y-2">
+      {groups.map((group) => {
+        const primary = group[0];
+        const meta = REQUEST_STATUS_META[primary.status];
+        return (
+          <div key={primary.trip_group_id} className="rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-ink-primary">
+                  {group.length > 1 ? `${group.length} sites` : primary.site_name}
+                </p>
+                <p className="text-xs text-ink-muted">
+                  {format(new Date(primary.planned_at), "d MMM yyyy, h:mm a")}
+                  {primary.purpose ? ` · ${primary.purpose}` : ""}
+                </p>
+              </div>
+              <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium", meta.bg, meta.text)}>
+                {meta.label}
+              </span>
+            </div>
+            {primary.status === "rejected" && primary.decision_note && (
+              <p className="mt-1.5 text-xs text-ink-muted">Reason: {primary.decision_note}</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SalesTrackerPage() {
   const { user, profile } = useAuth();
   const [markOpen, setMarkOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
   const isTeamHead = profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "manager";
   const isSalesDept = (profile?.department ?? "").trim().toLowerCase() === "sales";
 
@@ -177,15 +264,19 @@ export default function SalesTrackerPage() {
         <div>
           <h1 className="font-heading text-xl sm:text-2xl font-bold text-ink-primary">Sales Tracker</h1>
           <p className="text-sm text-ink-muted">
-            {isTeamHead ? "Live daily status for your team." : "Mark your daily status."}
+            {isTeamHead ? "Live daily status for your team." : "Mark your daily status and request site visits."}
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           {myStatusToday && (
             <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium", STATUS_META[myStatusToday.status]?.bg, STATUS_META[myStatusToday.status]?.text)}>
               Today: {STATUS_META[myStatusToday.status]?.label}
             </span>
           )}
+          <Button variant="outline" onClick={() => setRequestOpen(true)} className="gap-1.5 h-9 sm:h-10">
+            <Plus className="h-4 w-4" />
+            Request Site Visit
+          </Button>
           <Button onClick={() => setMarkOpen(true)} className="gap-1.5 h-9 sm:h-10">
             Mark my status
           </Button>
@@ -199,6 +290,8 @@ export default function SalesTrackerPage() {
           <motion.div variants={staggerItem}><StatCard title="On leave today" value={onLeaveToday} icon={Palmtree} iconColor="text-ink-secondary" iconBg="bg-muted" /></motion.div>
         </motion.div>
       )}
+
+      {isTeamHead && <SiteVisitApprovals />}
 
       {isTeamHead && (
         <div className="rounded-xl sm:rounded-card border border-border bg-card p-3.5 sm:p-5">
@@ -231,7 +324,13 @@ export default function SalesTrackerPage() {
         </div>
       )}
 
+      <div className="rounded-xl sm:rounded-card border border-border bg-card p-3.5 sm:p-5">
+        <h2 className="mb-3 sm:mb-4 font-heading text-sm sm:text-lg font-semibold text-ink-primary">My site visits</h2>
+        <MySiteVisits />
+      </div>
+
       <MarkStatusModal open={markOpen} onClose={() => setMarkOpen(false)} />
+      <RequestSiteVisitModal open={requestOpen} onClose={() => setRequestOpen(false)} />
     </AnimatedPage>
   );
 }
