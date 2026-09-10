@@ -9,13 +9,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import UserAvatar from "@/components/UserAvatar";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/ThemeToggle";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { cn } from "@/lib/utils";
 
 type NavItem = { label: string; path: string; icon: typeof LayoutDashboard };
 
 const adminNav: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
@@ -25,7 +25,6 @@ const adminNav: NavItem[] = [
   { label: "Users", path: "/users", icon: Users },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
-  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "Leave", path: "/leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
@@ -35,6 +34,7 @@ const adminNav: NavItem[] = [
 
 const superAdminNav: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
@@ -44,7 +44,6 @@ const superAdminNav: NavItem[] = [
   { label: "Users", path: "/users", icon: Users },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
-  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "Reports", path: "/reports", icon: BarChart3 },
@@ -54,6 +53,7 @@ const superAdminNav: NavItem[] = [
 
 const managerNav: NavItem[] = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
@@ -63,7 +63,6 @@ const managerNav: NavItem[] = [
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
-  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "All Leaves", path: "/leave", icon: Calendar },
   { label: "My Leave", path: "/my-leave", icon: Calendar },
@@ -74,6 +73,7 @@ const managerNav: NavItem[] = [
 
 const employeeNav: NavItem[] = [
   { label: "Dashboard", path: "/my-dashboard", icon: LayoutDashboard },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Tasks", path: "/tasks", icon: CheckSquare },
   { label: "My Tasks", path: "/my-tasks", icon: ClipboardList },
   { label: "Projects", path: "/projects", icon: FolderKanban },
@@ -82,7 +82,6 @@ const employeeNav: NavItem[] = [
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Team Members", path: "/team-members", icon: Workflow },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
-  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Calendar", path: "/calendar", icon: Calendar },
   { label: "Leave", path: "/my-leave", icon: Calendar },
   { label: "Notes", path: "/notes", icon: StickyNote },
@@ -91,13 +90,13 @@ const employeeNav: NavItem[] = [
 
 const internNav: NavItem[] = [
   { label: "Dashboard", path: "/intern-dashboard", icon: LayoutDashboard },
+  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "My Tasks", path: "/intern-tasks", icon: CheckSquare },
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Organisation Flow", path: "/organisation-flow", icon: Network },
   { label: "KRA & KPI", path: "/kra-kpi", icon: Target },
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Sales Tracker", path: "/sales-tracker", icon: RouteIcon },
-  { label: "Payments", path: "/payments", icon: Wallet },
   { label: "Notes", path: "/notes", icon: StickyNote },
   { label: "Profile", path: "/profile", icon: User },
 ];
@@ -106,7 +105,6 @@ export default function AppLayout() {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  usePushNotifications();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDark, setIsDark] = useState(() =>
     typeof window !== "undefined" && document.documentElement.classList.contains("dark")

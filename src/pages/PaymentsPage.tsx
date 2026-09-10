@@ -141,14 +141,19 @@ function RequestPaymentModal({
     [category, categories]
   );
 
-  // The common max for the picked category (same for every requester —
-  // there's no per-user tier anymore) — null/undefined means "no cap"
-  // (either the admin hasn't set a limit for this category yet, or — for
-  // a rate-based category — the unit count (meals/km) hasn't been entered
-  // yet). For a rate-based category this is the RATE × units.
+  // Each requester's cap/rate comes from their own Expense Tier
+  // (1/2/3, set by an admin on the Users page) — different tiers can
+  // have different rates for the same category.
+  const myTier: 1 | 2 | 3 = profile?.expense_tier ?? 1;
+
+  // The max for the picked category at the requester's tier —
+  // null/undefined means "no cap" (either the admin hasn't set a limit
+  // for this category/tier yet, or — for a rate-based category — the
+  // unit count (meals/km) hasn't been entered yet). For a rate-based
+  // category this is the RATE × units.
   const capForCategory = useMemo(() => {
     if (!category || category === "other") return null;
-    const row = tierLimits.find((t) => t.category === category);
+    const row = tierLimits.find((t) => t.category === category && t.tier === myTier);
     if (row?.max_amount == null) return null;
     if (rateUnitLabel === "day") {
       const units = parseFloat(mealCount);
@@ -159,14 +164,14 @@ function RequestPaymentModal({
       return !isNaN(units) && units > 0 ? row.max_amount * units : null;
     }
     return row.max_amount;
-  }, [category, tierLimits, rateUnitLabel, mealCount, petrolKm]);
+  }, [category, tierLimits, rateUnitLabel, mealCount, petrolKm, myTier]);
 
   // The raw per-unit rate itself, for display before units are entered.
   const rateForCategory = useMemo(() => {
     if (!category || !rateUnitLabel) return null;
-    const row = tierLimits.find((t) => t.category === category);
+    const row = tierLimits.find((t) => t.category === category && t.tier === myTier);
     return row?.max_amount ?? null;
-  }, [category, tierLimits, rateUnitLabel]);
+  }, [category, tierLimits, rateUnitLabel, myTier]);
 
   const reset = () => {
     setPaymentFor("project");
@@ -358,7 +363,7 @@ function RequestPaymentModal({
                   )}
                   {rateUnitLabel && rateForCategory != null && (
                     <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-muted">
-                      <Gauge className="h-3 w-3" /> Rate for {categoryLabel(categories, category)}: ₹{formatAmount(rateForCategory)} per {rateUnitLabel}
+                      <Gauge className="h-3 w-3" /> Rate for {categoryLabel(categories, category)} (Tier {myTier}): ₹{formatAmount(rateForCategory)} per {rateUnitLabel}
                       {capForCategory != null && <> — max ₹{formatAmount(capForCategory)} for this request</>}
                     </p>
                   )}
@@ -765,9 +770,11 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
   const queryClient = useQueryClient();
   // "Others" has no limit (it's the free-manual-entry fallback), so
   // it doesn't get a row in this grid — only categories a claim can be
-  // capped on. Limits are the same for everyone (no more per-user tiers),
-  // so under the hood this always reads/writes the tier = 1 row.
+  // capped on. Each category now has its own rate per Tier 1/2/3 — a
+  // user's tier (set on the Users page) decides which column applies
+  // to them.
   const categories = allCategories.filter((c) => c.key !== "other");
+  const TIERS = [1, 2, 3] as const;
   // Split into the two sections (TTA / Local Conveyance) plus whatever's
   // ungrouped (any custom category an admin adds without a section).
   const sections = useMemo(() => {
@@ -784,38 +791,43 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
     }
     return { groups: order.map((g) => ({ ...g, items: byGroup[g.key] })), ungrouped };
   }, [categories]);
-  const TIER = 1 as const;
   const [newCategoryName, setNewCategoryName] = useState("");
   const [addingCategory, setAddingCategory] = useState(false);
 
-  const valueFor = (category: string) =>
-    tierLimits.find((t) => t.category === category)?.max_amount;
+  const editKey = (tier: number, category: string) => `${tier}:${category}`;
+
+  const valueFor = (tier: number, category: string) =>
+    tierLimits.find((t) => t.category === category && t.tier === tier)?.max_amount;
 
   const [edits, setEdits] = useState<Record<string, string>>({});
 
-  const displayValue = (category: string) => {
-    if (category in edits) return edits[category];
-    const v = valueFor(category);
+  const displayValue = (tier: number, category: string) => {
+    const k = editKey(tier, category);
+    if (k in edits) return edits[k];
+    const v = valueFor(tier, category);
     return v == null ? "" : String(v);
   };
 
   const save = useMutation({
     mutationFn: async () => {
-      const writes = Object.entries(edits).map(([category, v]) => ({
-        tier: TIER,
-        category,
-        max_amount: v.trim() === "" ? null : parseFloat(v),
-      }));
+      const writes = Object.entries(edits).map(([k, v]) => {
+        const [tierStr, category] = k.split(":");
+        return {
+          tier: parseInt(tierStr, 10),
+          category,
+          max_amount: v.trim() === "" ? null : parseFloat(v),
+        };
+      });
       if (writes.length === 0) return;
       const { error } = await supabase.from("expense_tier_limits").upsert(writes, { onConflict: "tier,category" });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["expense-tier-limits"] });
-      toast.success("Limits saved");
+      toast.success("Rates saved");
       setEdits({});
     },
-    onError: () => toast.error("Couldn't save limits"),
+    onError: () => toast.error("Couldn't save rates"),
   });
 
   const addCategory = useMutation({
@@ -846,6 +858,62 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
     onError: (err: any) => toast.error(err?.message ?? "Couldn't remove category"),
   });
 
+  const renderTable = (items: ExpenseCategoryDef[], showRemove: boolean) => (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[380px] text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
+            <th className="py-2 pr-1.5">Category</th>
+            {TIERS.map((t) => (
+              <th key={t} className="py-2 pr-1.5">Tier {t}</th>
+            ))}
+            <th className="py-2 pr-1.5" />
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((c) => (
+            <tr key={c.key} className="border-b border-border last:border-0">
+              <td className="py-2 pr-1.5 font-medium text-ink-primary whitespace-nowrap">
+                {c.label}
+                {c.rate_unit_label && (
+                  <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
+                )}
+              </td>
+              {TIERS.map((t) => (
+                <td key={t} className="py-2 pr-1.5">
+                  <Input
+                    type="number" min="0" step="0.01"
+                    className="h-9 w-full min-w-0"
+                    placeholder="—"
+                    title={c.rate_unit_label ? `Tier ${t}: ₹ per ${c.rate_unit_label}` : `Tier ${t}: flat max amount`}
+                    value={displayValue(t, c.key)}
+                    onChange={(e) => setEdits((prev) => ({ ...prev, [editKey(t, c.key)]: e.target.value }))}
+                  />
+                </td>
+              ))}
+              <td className="py-2 pr-1.5">
+                {showRemove && !c.is_builtin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Remove the "${c.label}" category? Existing requests keep it, but it won't be pickable anymore.`)) {
+                        removeCategory.mutate(c.key);
+                      }
+                    }}
+                    className="text-xs text-destructive hover:underline"
+                    disabled={removeCategory.isPending}
+                  >
+                    Remove
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div className="rounded-card border border-border bg-card p-5">
       <div className="mb-1 flex items-center gap-2">
@@ -853,100 +921,19 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
         <h2 className="font-heading text-lg font-semibold text-ink-primary">Expense limits</h2>
       </div>
       <p className="mb-4 text-xs text-ink-muted">
-        Maximum claimable amount per category — the same for every requester. Food is a rate per day and Petrol a rate per km (multiplied by the days or KM entered on the request); other categories are a flat cap. Leave a cell blank for no limit.
+        Maximum claimable amount per category, set separately for each Expense Tier (1/2/3). A requester's own tier — assigned on the Users page — decides which column applies to them. Food is a rate per day and Petrol a rate per km (multiplied by the days or KM entered on the request); other categories are a flat cap. Leave a cell blank for no limit.
       </p>
       {sections.groups.map((g) => (
         <div key={g.key} className="mb-5">
           <h3 className="mb-2 text-sm font-semibold text-ink-primary">{g.label}</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
-                  <th className="py-2 pr-3">Category</th>
-                  <th className="py-2 pr-3">Limit</th>
-                  <th className="py-2 pr-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {g.items.map((c) => (
-                  <tr key={c.key} className="border-b border-border last:border-0">
-                    <td className="py-2 pr-3 font-medium text-ink-primary">
-                      {c.label}
-                      {c.rate_unit_label && (
-                        <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Input
-                        type="number" min="0" step="0.01"
-                        className="h-9 w-28"
-                        placeholder="No limit"
-                        title={c.rate_unit_label ? `₹ per ${c.rate_unit_label}` : "Flat max amount"}
-                        value={displayValue(c.key)}
-                        onChange={(e) => setEdits((prev) => ({ ...prev, [c.key]: e.target.value }))}
-                      />
-                    </td>
-                    <td className="py-2 pr-3" />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {renderTable(g.items, false)}
         </div>
       ))}
 
       {sections.ungrouped.length > 0 && (
         <div>
           {sections.groups.length > 0 && <h3 className="mb-2 text-sm font-semibold text-ink-primary">Other categories</h3>}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-medium text-ink-muted">
-                  <th className="py-2 pr-3">Category</th>
-                  <th className="py-2 pr-3">Limit</th>
-                  <th className="py-2 pr-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {sections.ungrouped.map((c) => (
-                  <tr key={c.key} className="border-b border-border last:border-0">
-                    <td className="py-2 pr-3 font-medium text-ink-primary">
-                      {c.label}
-                      {c.rate_unit_label && (
-                        <span className="ml-1.5 rounded-full bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-primary">₹/{c.rate_unit_label}</span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Input
-                        type="number" min="0" step="0.01"
-                        className="h-9 w-28"
-                        placeholder="No limit"
-                        title={c.rate_unit_label ? `₹ per ${c.rate_unit_label}` : "Flat max amount"}
-                        value={displayValue(c.key)}
-                        onChange={(e) => setEdits((prev) => ({ ...prev, [c.key]: e.target.value }))}
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      {!c.is_builtin && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm(`Remove the "${c.label}" category? Existing requests keep it, but it won't be pickable anymore.`)) {
-                              removeCategory.mutate(c.key);
-                            }
-                          }}
-                          className="text-xs text-destructive hover:underline"
-                          disabled={removeCategory.isPending}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {renderTable(sections.ungrouped, true)}
         </div>
       )}
 
@@ -982,7 +969,7 @@ function ExpenseTierLimitsPanel({ tierLimits, categories: allCategories }: { tie
 
       <div className="mt-4 flex justify-end">
         <Button type="button" disabled={Object.keys(edits).length === 0 || save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? "Saving..." : "Save limits"}
+          {save.isPending ? "Saving..." : "Save rates"}
         </Button>
       </div>
     </div>
