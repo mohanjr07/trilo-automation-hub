@@ -165,14 +165,20 @@ export default function LoginPage() {
         >
           <div className="mb-6 sm:mb-8 text-center">
             <img
-              src={`${import.meta.env.BASE_URL}favicon.png`}
-              alt="Trilo Automation"
-              className="mx-auto mb-4 object-contain"
-              style={{ width: "72px", height: "72px" }}
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="Magic Aisles"
+              className="mx-auto mb-4 h-20 w-auto max-w-[220px] object-contain dark:hidden"
+            />
+
+            <img
+              src={`${import.meta.env.BASE_URL}logo-dark.png`}
+              alt="Magic Aisles"
+              className="mx-auto mb-4 hidden h-20 w-auto max-w-[220px] object-contain dark:block"
             />
             <h1 className="font-heading text-2xl sm:text-3xl font-bold text-ink-primary">Task Flow</h1>
             <p className="mt-1 text-xs sm:text-sm text-ink-muted">Organize work. Track everything.</p>
           </div>
+
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
