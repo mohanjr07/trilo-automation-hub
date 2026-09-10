@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Building2, MapPin, Palmtree, User as UserIcon, Plus } from "lucide-react";
+import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import RequestSiteVisitModal from "@/components/RequestSiteVisitModal";
 import SiteVisitApprovals from "@/components/SiteVisitApprovals";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
@@ -49,6 +50,9 @@ type MyRequestStop = {
   planned_at: string;
   status: "pending" | "approved" | "rejected";
   decision_note: string | null;
+  visit_status: "not_started" | "in_progress" | "completed";
+  visit_started_at: string | null;
+  visit_ended_at: string | null;
 };
 
 const REQUEST_STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
@@ -57,16 +61,24 @@ const REQUEST_STATUS_META: Record<string, { label: string; bg: string; text: str
   rejected: { label: "Rejected", bg: "bg-destructive/10", text: "text-destructive" },
 };
 
+const VISIT_STATUS_META: Record<string, { label: string; bg: string; text: string }> = {
+  in_progress: { label: "Visit in progress", bg: "bg-primary/10", text: "text-primary" },
+  completed: { label: "Visit completed", bg: "bg-success/10", text: "text-success" },
+};
+
 /** The signed-in user's own recent site-visit requests, grouped by trip. */
 function MySiteVisits() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: rows = [] } = useQuery({
     queryKey: ["site-visit-requests", "mine", user?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("site_visit_requests")
-        .select("id, trip_group_id, stop_order, site_name, location, purpose, planned_at, status, decision_note")
+        .select(
+          "id, trip_group_id, stop_order, site_name, location, purpose, planned_at, status, decision_note, visit_status, visit_started_at, visit_ended_at"
+        )
         .eq("user_id", user!.id)
         .order("planned_at", { ascending: false })
         .limit(60);
@@ -88,6 +100,21 @@ function MySiteVisits() {
       .sort((a, b) => new Date(b[0].planned_at).getTime() - new Date(a[0].planned_at).getTime());
   }, [rows]);
 
+  const setVisitStatus = useMutation({
+    mutationFn: async ({ tripGroupId, visitStatus }: { tripGroupId: string; visitStatus: "in_progress" | "completed" }) => {
+      const { error } = await supabase
+        .from("site_visit_requests")
+        .update({ visit_status: visitStatus })
+        .eq("trip_group_id", tripGroupId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, { visitStatus }) => {
+      queryClient.invalidateQueries({ queryKey: ["site-visit-requests"] });
+      toast.success(visitStatus === "in_progress" ? "Visit started" : "Visit ended");
+    },
+    onError: () => toast.error("Couldn't update the visit — it may not be approved yet"),
+  });
+
   if (groups.length === 0) {
     return <EmptyState icon={MapPin} title="No site visits yet" description="Request a site visit to see it here." />;
   }
@@ -97,6 +124,14 @@ function MySiteVisits() {
       {groups.map((group) => {
         const primary = group[0];
         const meta = REQUEST_STATUS_META[primary.status];
+        const visitMeta = VISIT_STATUS_META[primary.visit_status];
+        const plannedIsFuture = new Date(primary.planned_at) > new Date() && format(new Date(primary.planned_at), "yyyy-MM-dd") !== today();
+        const canStart =
+          primary.visit_status === "not_started" &&
+          primary.status !== "rejected" &&
+          !(primary.status === "pending" && plannedIsFuture);
+        const canEnd = primary.visit_status === "in_progress";
+
         return (
           <div key={primary.trip_group_id} className="rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -109,12 +144,52 @@ function MySiteVisits() {
                   {primary.purpose ? ` · ${primary.purpose}` : ""}
                 </p>
               </div>
-              <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium", meta.bg, meta.text)}>
-                {meta.label}
-              </span>
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", meta.bg, meta.text)}>
+                  {meta.label}
+                </span>
+                {visitMeta && (
+                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", visitMeta.bg, visitMeta.text)}>
+                    {visitMeta.label}
+                  </span>
+                )}
+              </div>
             </div>
             {primary.status === "rejected" && primary.decision_note && (
               <p className="mt-1.5 text-xs text-ink-muted">Reason: {primary.decision_note}</p>
+            )}
+            {primary.visit_started_at && (
+              <p className="mt-1.5 text-xs text-ink-muted">
+                Started {format(new Date(primary.visit_started_at), "d MMM, h:mm a")}
+                {primary.visit_ended_at ? ` · Ended ${format(new Date(primary.visit_ended_at), "d MMM, h:mm a")}` : ""}
+              </p>
+            )}
+            {(canStart || canEnd) && (
+              <div className="mt-2.5">
+                {canStart && (
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={setVisitStatus.isPending}
+                    onClick={() => setVisitStatus.mutate({ tripGroupId: primary.trip_group_id, visitStatus: "in_progress" })}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Start Visit
+                  </Button>
+                )}
+                {canEnd && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    disabled={setVisitStatus.isPending}
+                    onClick={() => setVisitStatus.mutate({ tripGroupId: primary.trip_group_id, visitStatus: "completed" })}
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                    End Visit
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         );
