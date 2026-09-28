@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Android / signing — never commit keys
+keys/
+*.jks
+*.keystore
+fcm-service-account*.json
+*firebase-adminsdk*.json
+android/app/release/
+android/local.properties
+android/app/src/main/assets/public
+public/download/*.apk.tmp

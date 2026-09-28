@@ -10,14 +10,18 @@ import { brokeredPreviewStorage } from './previewAuthStorage';
 // sees our domain. Electron loads over file:// (protocol !== "https:"), so
 // it automatically falls through to the direct URL — Electron traffic isn't
 // subject to the same ISP-level blocking as a browser/app on that network.
+const clean = (v: string | undefined) => (v ?? "").trim().replace(/^["']+|["']+$/g, "");
+
 const onWebsite =
   typeof window !== "undefined" && window.location.protocol === "https:";
 
 const SUPABASE_URL = onWebsite
   ? `${window.location.origin}/sb`
-  : import.meta.env.VITE_SUPABASE_URL;
+  : clean(import.meta.env.VITE_SUPABASE_URL);
 
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+// Strip stray quotes/spaces: if the key is pasted into Cloudflare's env vars
+// as "eyJ..." the quotes are kept literally and every request is rejected.
+const SUPABASE_PUBLISHABLE_KEY = clean(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

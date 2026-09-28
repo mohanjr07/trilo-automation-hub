@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "117244201102",
+    "project_id": "magic-aisles-task-flow",
+    "storage_bucket": "magic-aisles-task-flow.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:117244201102:android:69f74323e7e9294dd261df",
+        "android_client_info": {
+          "package_name": "com.triloautomation.maplsalestracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwyT6NSjl-3tT4ONgGM5BW5Ipcjco8-iI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
