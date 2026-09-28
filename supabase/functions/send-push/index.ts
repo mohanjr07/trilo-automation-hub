@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
                 data: { route: "/notifications", notification_id: notifId, ...(reference_id ? { reference_id: String(reference_id) } : {}) },
                 android: {
                   priority: "high",
-                  notification: { channel_id: "mapl", sound: "default", default_vibrate_timings: true },
+                  notification: { channel_id: "mapl", icon: "ic_stat_mapl", color: "#FF4A00", sound: "default", default_vibrate_timings: true },
                 },
               },
             }),
