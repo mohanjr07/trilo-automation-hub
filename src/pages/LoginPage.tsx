@@ -9,6 +9,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { Capacitor } from "@capacitor/core";
+
+// Shown on the website (not inside the Android app or the desktop app).
+const showApkLink =
+  typeof window !== "undefined" &&
+  !Capacitor.isNativePlatform() &&
+  !(window as any).IS_ELECTRON &&
+  window.location.protocol === "https:";
 
 const schema = z.object({
   email: z.string().email("Invalid email address"),
@@ -229,6 +237,17 @@ export default function LoginPage() {
               Forgot password?
             </Link>
           </div>
+
+          {showApkLink && (
+            <a
+              href="/download/MaplTaskFlow.apk"
+              download
+              className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted active:opacity-70"
+            >
+              <Smartphone className="h-4 w-4" />
+              Download the Android app
+            </a>
+          )}
         </motion.div>
       </div>
     </div>
