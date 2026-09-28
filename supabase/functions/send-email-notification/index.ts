@@ -6,7 +6,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
+// Sends straight to Resend (no Lovable gateway since we moved off Lovable).
+const RESEND_URL = "https://api.resend.com/emails";
+const APP_URL = Deno.env.get("APP_URL") ?? "https://mapltaskflow.pages.dev";
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -29,7 +31,7 @@ const buildHtml = (title: string, body: string, name: string) => `
       <p style="margin:0 0 8px;color:#6b7280;font-size:13px;">Hi ${escapeHtml(name)},</p>
       <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a;">${escapeHtml(title)}</h1>
       <p style="margin:0 0 24px;font-size:15px;line-height:1.55;color:#374151;">${escapeHtml(body)}</p>
-      <a href="https://magicaislestasks.lovable.app/notifications"
+      <a href="${APP_URL}/notifications"
          style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;
                 padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;">
         View in Magic Aisles
@@ -49,27 +51,31 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
 
     if (!supabaseUrl || !serviceRoleKey) return json({ error: "Missing Supabase config" }, 500);
-    if (!lovableApiKey) return json({ error: "LOVABLE_API_KEY not configured" }, 500);
     if (!resendApiKey) return json({ error: "RESEND_API_KEY not configured" }, 500);
 
-    const payload = await req.json();
-    const record = payload.record ?? payload;
-    const { id: notificationId, user_id, title, body } = record ?? {};
-
-    if (!user_id || !title) return json({ error: "Missing user_id or title" }, 400);
+    // The trigger calls us with the public anon key, so never trust the
+    // payload: take only the notification id and read the real row.
+    const payload = await req.json().catch(() => ({}));
+    const notificationId = payload?.record?.id;
+    if (!notificationId || typeof notificationId !== "string") {
+      return json({ error: "Missing notification id" }, 400);
+    }
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
-    // Skip if already emailed
-    if (notificationId) {
-      const { data: existing } = await admin
-        .from("notifications").select("email_sent").eq("id", notificationId).maybeSingle();
-      if (existing?.email_sent) return json({ success: true, skipped: "already_sent" });
-    }
+    // Claim the row atomically so it's never emailed twice.
+    const { data: notif } = await admin
+      .from("notifications")
+      .update({ email_sent: true })
+      .eq("id", notificationId)
+      .or("email_sent.is.null,email_sent.eq.false")
+      .select("user_id, title, body")
+      .maybeSingle();
+    if (!notif) return json({ success: true, skipped: "not_found_or_already_sent" });
+    const { user_id, title, body } = notif;
 
     // Look up recipient
     const { data: profile } = await admin
@@ -80,15 +86,14 @@ Deno.serve(async (req) => {
 
     const html = buildHtml(title, body ?? "", profile.full_name ?? "there");
 
-    const resp = await fetch(`${GATEWAY_URL}/emails`, {
+    const resp = await fetch(RESEND_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${lovableApiKey}`,
-        "X-Connection-Api-Key": resendApiKey,
+        "Authorization": `Bearer ${resendApiKey}`,
       },
       body: JSON.stringify({
-        from: "Magic Aisles <notifications@magicaisles.com>",
+        from: Deno.env.get("RESEND_FROM") ?? "Magic Aisles <noreply@triloautomation.com>",
         to: [profile.email],
         subject: title,
         html,
@@ -98,11 +103,9 @@ Deno.serve(async (req) => {
     const data = await resp.json();
     if (!resp.ok) {
       console.error("Resend error:", resp.status, data);
+      // Release the claim so it can be retried.
+      await admin.from("notifications").update({ email_sent: false }).eq("id", notificationId);
       return json({ error: "Failed to send email", status: resp.status, details: data }, 502);
-    }
-
-    if (notificationId) {
-      await admin.from("notifications").update({ email_sent: true }).eq("id", notificationId);
     }
 
     return json({ success: true, email_id: data.id });
