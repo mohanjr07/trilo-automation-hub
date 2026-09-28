@@ -1,18 +1,18 @@
 // Supabase edge function: send-push
 //
-// Called by the `notifications_send_push` Postgres trigger whenever a
+// Called by the `trigger_send_push_on_notification` Postgres trigger whenever a
 // new row is inserted into `public.notifications`. Looks up every FCM
 // token for that user in `push_tokens` and sends each one a push via
 // Firebase Cloud Messaging's HTTP v1 API, using a service-account
 // (OAuth2) credential rather than the old legacy server key.
 //
 // Deploy with:
-//   npx supabase functions deploy send-push --project-ref jhtfhjfwjsutkwebmrgv
+//   npx supabase functions deploy send-push --project-ref dxlpwnmoohkddkkqoxzt
 //
 // Requires the secret FCM_SERVICE_ACCOUNT to be set to the full JSON
 // contents of a Firebase service-account key (Firebase Console ->
 // Project settings -> Service accounts -> Generate new private key):
-//   npx supabase secrets set FCM_SERVICE_ACCOUNT="$(cat service-account.json)" --project-ref jhtfhjfwjsutkwebmrgv
+//   npx supabase secrets set FCM_SERVICE_ACCOUNT="$(cat service-account.json)" --project-ref dxlpwnmoohkddkkqoxzt
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -93,13 +93,29 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "FCM_SERVICE_ACCOUNT secret not set" }), { status: 500 });
     }
 
-    const { user_id, title, body, reference_id } = await req.json();
-    if (!user_id || !title || !body) {
-      return new Response(JSON.stringify({ error: "user_id, title and body are required" }), { status: 400 });
+    // The trigger calls us with the public anon key, so never trust the
+    // payload: take only the notification id and read the real row.
+    const payload = await req.json().catch(() => ({}));
+    const notifId = payload?.record?.id;
+    if (!notifId || typeof notifId !== "string") {
+      return new Response(JSON.stringify({ error: "record.id is required" }), { status: 400 });
     }
 
     const sa: ServiceAccount = JSON.parse(FCM_SERVICE_ACCOUNT_RAW);
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    // Claim the row so the same notification is never pushed twice.
+    const { data: notif } = await supabase
+      .from("notifications")
+      .update({ push_sent: true })
+      .eq("id", notifId)
+      .or("push_sent.is.null,push_sent.eq.false")
+      .select("user_id, title, body, reference_id")
+      .maybeSingle();
+    if (!notif) {
+      return new Response(JSON.stringify({ sent: 0, reason: "not found or already pushed" }), { status: 200 });
+    }
+    const { user_id, title, body, reference_id } = notif;
 
     const { data: tokens, error } = await supabase
       .from("push_tokens")
