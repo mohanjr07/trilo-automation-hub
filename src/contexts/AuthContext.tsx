@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { initPush, removePushToken } from "@/lib/push";
 
 type Profile = {
   id: string;
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         await fetchProfile(nextSession.user.id);
+        void initPush();
       } catch {
         if (isMounted) {
           setProfile(null);
@@ -111,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    await removePushToken();
     await supabase.auth.signOut();
     setProfile(null);
   };
