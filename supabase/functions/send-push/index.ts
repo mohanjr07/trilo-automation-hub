@@ -143,8 +143,11 @@ Deno.serve(async (req) => {
               message: {
                 token: row.token,
                 notification: { title, body },
-                data: reference_id ? { reference_id: String(reference_id) } : undefined,
-                android: { priority: "high" },
+                data: { route: "/notifications", notification_id: notifId, ...(reference_id ? { reference_id: String(reference_id) } : {}) },
+                android: {
+                  priority: "high",
+                  notification: { channel_id: "mapl", sound: "default", default_vibrate_timings: true },
+                },
               },
             }),
           },

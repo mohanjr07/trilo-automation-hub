@@ -27,6 +27,18 @@ export async function initPush() {
 
     if (permStatus.receive !== "granted") return;
 
+    // Heads-up (pop-down) notifications with sound on Android 8+.
+    // send-push targets this channel id.
+    await PushNotifications.createChannel({
+      id: "mapl",
+      name: "MAPL Task Flow",
+      description: "Tasks, leave, site visits and other updates",
+      importance: 5,
+      visibility: 1,
+      sound: "default",
+      vibration: true,
+    }).catch(() => {});
+
     if (!listenersRegistered) {
       listenersRegistered = true;
 
@@ -50,8 +62,10 @@ export async function initPush() {
         console.log("Push received in foreground:", notification);
       });
 
+      // Tapping a notification opens the Notifications page.
       PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-        console.log("Push tapped:", action.notification);
+        const route = (action.notification?.data as Record<string, string> | undefined)?.route || "/notifications";
+        if (window.location.pathname !== route) window.location.assign(route);
       });
     }
 
