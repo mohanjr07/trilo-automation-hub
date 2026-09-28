@@ -3,7 +3,20 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// Some Indian ISPs (office wifi, Jio, Airtel, ACT) block *.supabase.co
+// directly, so on the live website we route every Supabase request through
+// our own domain via a Cloudflare Pages Function at /sb/* (see
+// functions/sb/[[path]].js), which relays it to Supabase. The ISP only ever
+// sees our domain. Electron loads over file:// (protocol !== "https:"), so
+// it automatically falls through to the direct URL — Electron traffic isn't
+// subject to the same ISP-level blocking as a browser/app on that network.
+const onWebsite =
+  typeof window !== "undefined" && window.location.protocol === "https:";
+
+const SUPABASE_URL = onWebsite
+  ? `${window.location.origin}/sb`
+  : import.meta.env.VITE_SUPABASE_URL;
+
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Import the supabase client like this:
