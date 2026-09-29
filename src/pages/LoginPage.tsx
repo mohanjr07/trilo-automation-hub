@@ -175,13 +175,13 @@ export default function LoginPage() {
             <img
               src={`${import.meta.env.BASE_URL}logo-stacked.png`}
               alt="Magic Aisles"
-              className="mx-auto mb-5 h-24 sm:h-28 w-auto max-w-[240px] object-contain dark:hidden"
+              className="mx-auto mb-4 h-16 sm:h-20 w-auto max-w-[180px] object-contain dark:hidden"
             />
 
             <img
               src={`${import.meta.env.BASE_URL}logo-stacked-dark.png`}
               alt="Magic Aisles"
-              className="mx-auto mb-5 hidden h-24 sm:h-28 w-auto max-w-[240px] object-contain dark:block"
+              className="mx-auto mb-4 hidden h-16 sm:h-20 w-auto max-w-[180px] object-contain dark:block"
             />
             <h1 className="font-heading text-2xl sm:text-3xl font-bold text-ink-primary">Task Flow</h1>
             <p className="mt-1 text-xs sm:text-sm text-ink-muted">Organize work. Track everything.</p>
