@@ -17,8 +17,8 @@
     "electron:build": "npm run build && electron-builder --win --x64 --publish never",
     "electron:build:portable": "npm run build && electron-builder --win portable --x64 --publish never",
     "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
-    "android:build": "npm run build && cap sync android",
-    "android:run": "npm run build && cap run android",
+    "android:build": "npm run build && rm -rf dist/download && cap sync android",
+    "android:run": "npm run build && rm -rf dist/download && cap run android",
     "android:open": "cap open android"
   },
   "dependencies": {
