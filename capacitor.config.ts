@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   appName: 'MAPL Task Flow',
   webDir: 'dist',
   server: {
-    url: 'https://mapltaskflow.pages.dev',
+    url: 'https://taskflow.magicaisles.com',
     errorPath: 'offline.html',
   },
   android: { allowMixedContent: false },

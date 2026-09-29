@@ -8,7 +8,7 @@ const corsHeaders = {
 
 // Sends straight to Resend (no Lovable gateway since we moved off Lovable).
 const RESEND_URL = "https://api.resend.com/emails";
-const APP_URL = Deno.env.get("APP_URL") ?? "https://mapltaskflow.pages.dev";
+const APP_URL = Deno.env.get("APP_URL") ?? "https://taskflow.magicaisles.com";
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
