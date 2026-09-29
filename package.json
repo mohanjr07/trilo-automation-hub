@@ -19,7 +19,8 @@
     "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64 --publish never",
     "android:build": "npm run build && rm -rf dist/download && cap sync android",
     "android:run": "npm run build && rm -rf dist/download && cap run android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "deploy:functions": "bash scripts/deploy-functions.sh"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
