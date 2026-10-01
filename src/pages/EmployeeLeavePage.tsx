@@ -157,8 +157,10 @@ function NewLeaveModal({ open, onClose }: { open: boolean; onClose: () => void }
     queryKey: ["casual-leave-usage", user?.id],
     queryFn: async () => {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const y = now.getFullYear(), m = now.getMonth() + 1;
+      const monthStart = `${y}-${pad(m)}-01`;
+      const monthEnd = `${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}`;
       // Select with the new columns; if the schema hasn't been migrated yet,
       // fall back to the old column set (is_half_day / reverted_at absent).
       let rows: any[] | null = null;

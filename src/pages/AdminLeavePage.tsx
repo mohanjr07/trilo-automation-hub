@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { exportLeavesToExcel } from "@/lib/leaveExcelExport";
+import LeaveBalanceTable from "@/components/LeaveBalanceTable";
 
 export default function AdminLeavePage() {
   const { user, profile } = useAuth();
@@ -161,6 +162,8 @@ export default function AdminLeavePage() {
     { key: "approved", label: "Approved" },
     { key: "rejected", label: "Rejected" },
     { key: "reverted", label: `Reverted${reverted ? ` (${reverted})` : ""}` },
+    // Paid-leave balance — admins only
+    ...(isStrictAdmin ? [{ key: "balance", label: "Leave Balance" }] : []),
   ];
 
   return (
@@ -196,7 +199,7 @@ export default function AdminLeavePage() {
       </motion.div>
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <div className="flex gap-1 border-b border-border flex-1 min-w-[200px]">
+        <div className="flex gap-1 border-b border-border flex-1 min-w-[200px] overflow-x-auto scrollbar-none">
           {tabs.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`relative px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${tab === t.key ? "text-primary" : "text-ink-muted hover:text-ink-secondary"}`}>
@@ -211,6 +214,9 @@ export default function AdminLeavePage() {
         </div>
       </div>
 
+      {tab === "balance" && isStrictAdmin ? (
+        <LeaveBalanceTable requests={requests} search={search} />
+      ) : (
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-2">
         {filtered.map((req: any) => {
           const isReverted = !!req.reverted_at;
@@ -267,6 +273,7 @@ export default function AdminLeavePage() {
         })}
         {filtered.length === 0 && <div className="py-16 text-center text-sm text-ink-muted">No requests found</div>}
       </motion.div>
+      )}
 
       <ReviewModal request={reviewReq} onClose={() => setReviewReq(null)} />
       {isStrictAdmin && <AssignLeaveModal open={showAssignLeave} onClose={() => setShowAssignLeave(false)} />}
@@ -631,40 +638,55 @@ function ExportLeaveModal({ open, onClose }: { open: boolean; onClose: () => voi
   const handleExport = async () => {
     setExporting(true);
     try {
-      // Active employees in alphabetical order (mirrors the paper sheet's S.No layout)
-      const empRes = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("is_active", true)
-        .order("full_name");
-      if (empRes.error) throw empRes.error;
-      const employees = (empRes.data ?? []) as Array<{ id: string; full_name: string }>;
-
-      // Bound the leave query to the chosen month so we don't ship the whole table
-      const monthStart = new Date(year, month - 1, 1).toISOString().slice(0, 10);
-      const monthEnd = new Date(year, month, 0).toISOString().slice(0, 10);
-      // A request "touches" this month if start_date <= monthEnd AND end_date >= monthStart
+      // 1) Leave requests touching the chosen month.
+      // Local YYYY-MM-DD (toISOString() shifts India midnight to the previous day).
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const monthStart = `${year}-${pad(month)}-01`;
+      const monthEnd = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+      // Touches the month if start_date <= monthEnd AND (end_date >= monthStart OR end_date is null —
+      // single-day leaves may have no end_date and were being dropped).
+      const overlapFilter = `end_date.gte.${monthStart},end_date.is.null`;
+      let leaveRequests: any[] = [];
       const reqRes = await supabase
         .from("leave_requests")
         .select("employee_id, start_date, end_date, reverted_at, status, type, leave_category, is_half_day, half_day_period")
         .lte("start_date", monthEnd)
-        .gte("end_date", monthStart);
+        .or(overlapFilter);
       if (reqRes.error) {
-        // Fallback if reverted_at column doesn't exist yet — re-query without it
         if (reqRes.error.code === "42703" || (reqRes.error.message ?? "").includes("reverted_at")) {
           const fallback = await supabase
             .from("leave_requests")
             .select("employee_id, start_date, end_date, status, type, leave_category, is_half_day, half_day_period")
             .lte("start_date", monthEnd)
-            .gte("end_date", monthStart);
+            .or(overlapFilter);
           if (fallback.error) throw fallback.error;
-          await exportLeavesToExcel({ year, month, employees, leaveRequests: fallback.data ?? [] });
+          leaveRequests = fallback.data ?? [];
         } else {
           throw reqRes.error;
         }
       } else {
-        await exportLeavesToExcel({ year, month, employees, leaveRequests: reqRes.data ?? [] });
+        leaveRequests = reqRes.data ?? [];
       }
+
+      // Anyone with an approved (not reverted) leave this month always gets a row,
+      // even if they've since been deactivated.
+      const withLeave = new Set(
+        leaveRequests
+          .filter((r: any) => (!r.status || r.status === "approved") && !r.reverted_at)
+          .map((r: any) => r.employee_id as string),
+      );
+
+      // 2) Rows: active employees + anyone who has a leave this month.
+      const empRes = await supabase
+        .from("profiles")
+        .select("id, full_name, is_active")
+        .order("full_name");
+      if (empRes.error) throw empRes.error;
+      const employees = (empRes.data ?? [])
+        .filter((e: any) => withLeave.has(e.id) || e.is_active !== false)
+        .map(({ id, full_name }: any) => ({ id, full_name: full_name || "(no name)" })) as Array<{ id: string; full_name: string }>;
+
+      await exportLeavesToExcel({ year, month, employees, leaveRequests });
       toast.success("Excel file ready — check your downloads");
       onClose();
     } catch (e: any) {
