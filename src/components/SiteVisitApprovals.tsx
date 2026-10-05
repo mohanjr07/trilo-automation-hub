@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { halfLabel } from "@/lib/visitHalf";
 import { CheckCircle2, XCircle, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -134,7 +135,7 @@ export default function SiteVisitApprovals() {
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                      Planned {format(new Date(primary.planned_at), "d MMM, h:mm a")}
+                      Planned {format(new Date(primary.planned_at), "d MMM")} · {halfLabel(primary.planned_at)}
                     </span>
                     {VISIT_STATUS_META[primary.visit_status] && (
                       <span

@@ -10,6 +10,7 @@ import {
   isSameDay, isToday, addMonths, subMonths, startOfWeek, endOfWeek,
   parseISO,
 } from "date-fns";
+import { halfLabel } from "@/lib/visitHalf";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -430,7 +431,7 @@ export default function CalendarPage() {
                             {trip.stops.length > 1 ? `${trip.stops.length} sites` : trip.stops[0].site_name}
                           </p>
                           {trip.stops.length === 1 && <p className="text-xs text-ink-muted">{trip.stops[0].location}</p>}
-                          <p className="text-xs text-ink-muted">{format(parseISO(trip.stops[0].planned_at), "h:mm a")}</p>
+                          <p className="text-xs text-ink-muted">{halfLabel(trip.stops[0].planned_at)}</p>
                         </div>
                         <span
                           className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${

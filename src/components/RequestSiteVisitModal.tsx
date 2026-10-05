@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import LocationAutocompleteInput from "@/components/LocationAutocompleteInput";
 import { toast } from "sonner";
+import { HALF_TIME, halfOf, type VisitHalf } from "@/lib/visitHalf";
 
 const PURPOSE_OPTIONS = [
   "Requirement gathering",
@@ -77,14 +78,17 @@ export default function RequestSiteVisitModal({
   const [sites, setSites] = useState<SiteStop[]>(() =>
     editTrip ? editTrip.stops.map((s) => ({ ...s })) : [emptyStop()]
   );
-  const [plannedAt, setPlannedAt] = useState(() =>
-    editTrip ? format(new Date(editTrip.plannedAt), "yyyy-MM-dd'T'HH:mm") : ""
+  const [plannedDay, setPlannedDay] = useState(() =>
+    editTrip ? format(new Date(editTrip.plannedAt), "yyyy-MM-dd") : ""
   );
+  const [half, setHalf] = useState<VisitHalf>(() => (editTrip ? halfOf(editTrip.plannedAt) : "first"));
+  const plannedAt = plannedDay ? `${plannedDay}T${HALF_TIME[half]}` : "";
 
   const reset = () => {
     if (editTrip) return; // don't wipe an edit form back to a blank one
     setSites([emptyStop()]);
-    setPlannedAt("");
+    setPlannedDay("");
+    setHalf("first");
   };
 
   const updateStop = (index: number, patch: Partial<SiteStop>) => {
@@ -212,7 +216,7 @@ export default function RequestSiteVisitModal({
                   return;
                 }
                 if (!plannedAt) {
-                  toast.error("Pick a planned visit date and time");
+                  toast.error("Pick a planned visit date");
                   return;
                 }
                 const plannedDate = new Date(plannedAt);
@@ -293,13 +297,28 @@ export default function RequestSiteVisitModal({
               </button>
 
               <div className="rounded-lg border border-border p-4">
-                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Planned date & time *</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink-primary">Planned date *</label>
                 <Input
-                  type="datetime-local"
-                  value={plannedAt}
-                  min={minPlannedAtLocalValue()}
-                  onChange={(e) => setPlannedAt(e.target.value)}
+                  type="date"
+                  value={plannedDay}
+                  min={minPlannedAtLocalValue().slice(0, 10)}
+                  onChange={(e) => setPlannedDay(e.target.value)}
                 />
+                <label className="mt-3 mb-1.5 block text-sm font-medium text-ink-primary">Session *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["first", "second"] as VisitHalf[]).map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setHalf(h)}
+                      className={`h-10 rounded-lg border text-sm font-medium transition-colors ${
+                        half === h ? "border-primary bg-primary/10 text-primary" : "border-border text-ink-secondary hover:bg-muted"
+                      }`}
+                    >
+                      {h === "first" ? "First half" : "Second half"}
+                    </button>
+                  ))}
+                </div>
                 <p className="mt-1 text-xs text-ink-muted">
                   Applies to the whole trip — all sites above are one request. Today is allowed (shows as pending
                   until approved); a future date also needs approval before you can start the visit.

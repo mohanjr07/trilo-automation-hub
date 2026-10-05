@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { halfLabel } from "@/lib/visitHalf";
 import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -158,7 +159,7 @@ function MySiteVisits() {
                   {group.length > 1 ? `${group.length} sites` : primary.site_name}
                 </p>
                 <p className="text-xs text-ink-muted">
-                  {format(new Date(primary.planned_at), "d MMM yyyy, h:mm a")}
+                  {format(new Date(primary.planned_at), "d MMM yyyy")} · {halfLabel(primary.planned_at)}
                   {primary.purpose ? ` · ${primary.purpose}` : ""}
                 </p>
               </div>
@@ -342,7 +343,7 @@ function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
                   {group.length > 1 ? `${group.length} sites` : primary.site_name}
                 </p>
                 <p className="text-xs text-ink-muted">
-                  {format(new Date(primary.planned_at), "d MMM yyyy, h:mm a")}
+                  {format(new Date(primary.planned_at), "d MMM yyyy")} · {halfLabel(primary.planned_at)}
                   {primary.purpose ? ` · ${primary.purpose}` : ""}
                 </p>
               </div>
