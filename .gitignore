@@ -33,3 +33,6 @@ android/app/release/
 android/local.properties
 android/app/src/main/assets/public
 public/download/*.apk.tmp
+
+# Vite temp files
+vite.config.ts.timestamp-*
