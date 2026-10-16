@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,16 +13,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Monitor, Search, Plus, X, Pencil, Trash2,
   Laptop, Smartphone, Printer, Server, Headphones,
   Package, CheckCircle2, AlertCircle, Clock, Eye,
+  ChevronsUpDown, Check, Cpu, Cog, Code, Armchair, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+type AssetCategory = "IT" | "Machines" | "Softwares" | "Furnitures";
+
 type Asset = {
   id: string;
   asset_name: string;
+  asset_category: AssetCategory;
   asset_type: string;
   serial_number: string | null;
   holder_name: string | null;
@@ -38,7 +55,46 @@ type Profile = {
   full_name: string;
 };
 
-const ASSET_TYPES = ["Laptop", "Desktop", "Monitor", "Phone", "Tablet", "Printer", "Server", "Headset", "Other"];
+// ---------------------------------------------------------------------------
+// Helpers to encode/decode multiple holders in the single holder_name column.
+// We store a JSON array when there are multiple holders, plain string otherwise
+// (for backward compat with existing rows).
+// ---------------------------------------------------------------------------
+function encodeHolders(names: string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  return JSON.stringify(names);
+}
+
+function decodeHolders(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as string[];
+  } catch {
+    // plain string — legacy single holder
+  }
+  return [raw];
+}
+
+// ---------------------------------------------------------------------------
+
+const CATEGORY_OPTIONS: AssetCategory[] = ["IT", "Machines", "Softwares", "Furnitures"];
+
+const categoryConfig: Record<AssetCategory, { label: string; icon: any; color: string }> = {
+  IT:         { label: "IT",         icon: Cpu,      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+  Machines:   { label: "Machines",   icon: Cog,      color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" },
+  Softwares:  { label: "Softwares",  icon: Code,     color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" },
+  Furnitures: { label: "Furnitures", icon: Armchair, color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+};
+
+const DEFAULT_TYPES_BY_CATEGORY: Record<AssetCategory, string[]> = {
+  IT:         ["Laptop", "Desktop", "Monitor", "Phone", "Tablet", "Printer", "Server", "Headset"],
+  Machines:   ["Lathe", "CNC", "3D Printer", "Drill", "Compressor", "Forklift"],
+  Softwares:  ["License", "Subscription", "OS", "Productivity", "Design", "Development"],
+  Furnitures: ["Chair", "Desk", "Table", "Cabinet", "Sofa", "Shelf", "Whiteboard"],
+};
+
 const STATUS_OPTIONS = ["available", "assigned", "maintenance", "retired"] as const;
 
 const assetTypeIcon = (type: string) => {
@@ -62,21 +118,179 @@ const statusConfig = {
 
 const emptyForm = {
   asset_name: "",
+  asset_category: "IT" as AssetCategory,
   asset_type: "Laptop",
   serial_number: "",
-  holder_name: "",
+  holder_names: [] as string[],   // multi-holder
   status: "available" as Asset["status"],
   notes: "",
 };
 
+// ---------------------------------------------------------------------------
+// Small component: multi-select holder picker
+// ---------------------------------------------------------------------------
+function HolderMultiSelect({
+  profiles,
+  selected,
+  onChange,
+}: {
+  profiles: Profile[];
+  selected: string[];
+  onChange: (names: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const toggle = (name: string) => {
+    if (selected.includes(name)) {
+      onChange(selected.filter((n) => n !== name));
+    } else {
+      onChange([...selected, name]);
+    }
+  };
+
+  const filtered = profiles.filter((p) =>
+    p.full_name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const triggerLabel =
+    selected.length === 0
+      ? "Unassigned"
+      : selected.length === 1
+      ? selected[0]
+      : `${selected.length} members`;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          className="w-full justify-between font-normal"
+        >
+          <span className={cn("truncate", selected.length === 0 && "text-ink-muted")}>
+            {triggerLabel}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder="Search members…"
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            {/* Unassigned option */}
+            <CommandItem
+              value="__unassigned__"
+              onSelect={() => { onChange([]); setOpen(false); }}
+            >
+              <Check className={cn("mr-2 h-4 w-4", selected.length === 0 ? "opacity-100" : "opacity-0")} />
+              Unassigned
+            </CommandItem>
+            <CommandEmpty>No members found.</CommandEmpty>
+            <CommandGroup heading="Members">
+              {filtered.map((p) => {
+                const isSelected = selected.includes(p.full_name);
+                return (
+                  <CommandItem
+                    key={p.id}
+                    value={p.full_name}
+                    onSelect={() => toggle(p.full_name)}
+                  >
+                    <Check className={cn("mr-2 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
+                    <div className="flex items-center gap-2">
+                      <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                        {p.full_name.charAt(0).toUpperCase()}
+                      </div>
+                      {p.full_name}
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+        {/* Selected chips */}
+        {selected.length > 0 && (
+          <div className="p-2 border-t border-border flex flex-wrap gap-1">
+            {selected.map((name) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5 font-medium"
+              >
+                {name}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggle(name); }}
+                  className="hover:text-destructive"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// HolderCell — renders avatars in the table row
+// ---------------------------------------------------------------------------
+function HolderCell({ holderName }: { holderName: string | null }) {
+  const names = decodeHolders(holderName);
+  if (names.length === 0) return <span className="text-ink-muted">—</span>;
+  if (names.length === 1) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+          {names[0].charAt(0).toUpperCase()}
+        </div>
+        <span className="text-ink-primary">{names[0]}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex -space-x-1.5">
+        {names.slice(0, 3).map((name, i) => (
+          <div
+            key={i}
+            title={name}
+            className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary ring-2 ring-card shrink-0"
+          >
+            {name.charAt(0).toUpperCase()}
+          </div>
+        ))}
+        {names.length > 3 && (
+          <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-[9px] font-bold text-ink-muted ring-2 ring-card">
+            +{names.length - 3}
+          </div>
+        )}
+      </div>
+      <span className="text-xs text-ink-secondary">{names.length} members</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 export default function AssetsPage() {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = (profile?.role === "admin" || profile?.role === "super_admin");
+  const myAssetsOnly = !isAdmin;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | AssetCategory>("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editAsset, setEditAsset] = useState<Asset | null>(null);
@@ -84,16 +298,26 @@ export default function AssetsPage() {
   const [form, setForm] = useState(emptyForm);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [typeQuery, setTypeQuery] = useState("");
+
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: ["assets"],
+    queryKey: ["assets", myAssetsOnly ? `mine:${profile?.id ?? "anon"}` : "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("assets")
         .select("*")
         .order("created_at", { ascending: false });
+      if (myAssetsOnly && profile) {
+        query = query.or(
+          `holder_id.eq.${profile.id},holder_name.eq.${profile.full_name}`
+        );
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as Asset[];
     },
+    enabled: !!profile,
   });
 
   const { data: profiles = [] } = useQuery({
@@ -110,14 +334,16 @@ export default function AssetsPage() {
 
   const createMutation = useMutation({
     mutationFn: async (values: typeof emptyForm) => {
+      const encoded = encodeHolders(values.holder_names);
       const { error } = await supabase.from("assets").insert({
         asset_name: values.asset_name,
+        asset_category: values.asset_category,
         asset_type: values.asset_type,
         serial_number: values.serial_number || null,
-        holder_name: values.holder_name || null,
+        holder_name: encoded || null,
         status: values.status,
         notes: values.notes || null,
-        assigned_at: values.holder_name ? new Date().toISOString() : null,
+        assigned_at: values.holder_names.length > 0 ? new Date().toISOString() : null,
       });
       if (error) throw error;
     },
@@ -131,14 +357,16 @@ export default function AssetsPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, values }: { id: string; values: typeof emptyForm }) => {
+      const encoded = encodeHolders(values.holder_names);
       const { error } = await supabase.from("assets").update({
         asset_name: values.asset_name,
+        asset_category: values.asset_category,
         asset_type: values.asset_type,
         serial_number: values.serial_number || null,
-        holder_name: values.holder_name || null,
+        holder_name: encoded || null,
         status: values.status,
         notes: values.notes || null,
-        assigned_at: values.holder_name ? new Date().toISOString() : null,
+        assigned_at: values.holder_names.length > 0 ? new Date().toISOString() : null,
       }).eq("id", id);
       if (error) throw error;
     },
@@ -168,28 +396,53 @@ export default function AssetsPage() {
     setEditAsset(a);
     setForm({
       asset_name: a.asset_name,
+      asset_category: a.asset_category ?? "IT",
       asset_type: a.asset_type,
       serial_number: a.serial_number ?? "",
-      holder_name: a.holder_name ?? "",
+      holder_names: decodeHolders(a.holder_name),
       status: a.status,
       notes: a.notes ?? "",
     });
     setModalOpen(true);
   };
-  const closeModal = () => { setModalOpen(false); setEditAsset(null); setForm(emptyForm); };
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditAsset(null);
+    setForm(emptyForm);
+    setTypeOpen(false);
+    setTypeQuery("");
+  };
 
   const handleSubmit = () => {
     if (!form.asset_name.trim()) { toast.error("Asset name is required"); return; }
+    if (!form.asset_type.trim()) { toast.error("Asset type is required"); return; }
     if (editAsset) updateMutation.mutate({ id: editAsset.id, values: form });
     else createMutation.mutate(form);
   };
 
+  const typeSuggestions = useMemo(() => {
+    const fromDb = assets
+      .filter(a => a.asset_category === form.asset_category)
+      .map(a => a.asset_type);
+    const defaults = DEFAULT_TYPES_BY_CATEGORY[form.asset_category] ?? [];
+    return Array.from(new Set([...defaults, ...fromDb])).sort();
+  }, [assets, form.asset_category]);
+
+  const allTypesInUse = useMemo(() => {
+    const all = new Set<string>();
+    Object.values(DEFAULT_TYPES_BY_CATEGORY).forEach(arr => arr.forEach(t => all.add(t)));
+    assets.forEach(a => all.add(a.asset_type));
+    return Array.from(all).sort();
+  }, [assets]);
+
   const filtered = assets.filter((a) => {
     const q = search.toLowerCase();
+    const holderNames = decodeHolders(a.holder_name);
     if (q && !a.asset_name.toLowerCase().includes(q) &&
-        !(a.holder_name ?? "").toLowerCase().includes(q) &&
+        !holderNames.some(n => n.toLowerCase().includes(q)) &&
         !(a.serial_number ?? "").toLowerCase().includes(q)) return false;
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
+    if (categoryFilter !== "all" && a.asset_category !== categoryFilter) return false;
     if (typeFilter !== "all" && a.asset_type !== typeFilter) return false;
     return true;
   });
@@ -201,14 +454,21 @@ export default function AssetsPage() {
     maintenance: assets.filter(a => a.status === "maintenance").length,
   };
 
+  const queryTrim = typeQuery.trim();
+  const exactExists = typeSuggestions.some(t => t.toLowerCase() === queryTrim.toLowerCase());
+
   return (
-    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="md:p-6 space-y-6">
 
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-ink-primary">Assets</h2>
-          <p className="text-sm text-ink-muted mt-0.5">Track company assets and their holders</p>
+          <h2 className="text-2xl font-bold text-ink-primary">
+            {myAssetsOnly ? "My Assets" : "Assets"}
+          </h2>
+          <p className="text-sm text-ink-muted mt-0.5">
+            {myAssetsOnly ? "Assets currently assigned to you" : "Track company assets and their holders"}
+          </p>
         </div>
         {isAdmin && (
           <Button onClick={openAdd} className="gap-2">
@@ -218,21 +478,21 @@ export default function AssetsPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         {[
           { label: "Total Assets",  value: stats.total,       icon: Package,      color: "text-primary",    bg: "bg-primary/10" },
           { label: "Available",     value: stats.available,   icon: CheckCircle2, color: "text-green-600",  bg: "bg-green-100 dark:bg-green-900/30" },
           { label: "Assigned",      value: stats.assigned,    icon: Clock,        color: "text-blue-600",   bg: "bg-blue-100 dark:bg-blue-900/30" },
           { label: "Maintenance",   value: stats.maintenance, icon: AlertCircle,  color: "text-yellow-600", bg: "bg-yellow-100 dark:bg-yellow-900/30" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="rounded-xl border border-border bg-card p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-ink-secondary">{label}</p>
-                <p className="mt-1 text-3xl font-bold text-ink-primary">{value}</p>
+          <div key={label} className="rounded-xl border border-border bg-card p-3.5 sm:p-5 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm text-ink-secondary leading-snug">{label}</p>
+                <p className="mt-1 text-2xl sm:text-3xl font-bold text-ink-primary leading-tight">{value}</p>
               </div>
-              <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", bg)}>
-                <Icon className={cn("h-5 w-5", color)} />
+              <div className={cn("flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg", bg)}>
+                <Icon className={cn("h-4 w-4 sm:h-5 sm:w-5", color)} />
               </div>
             </div>
           </div>
@@ -250,8 +510,17 @@ export default function AssetsPage() {
             className="pl-9"
           />
         </div>
+        <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as any)}>
+          <SelectTrigger className="flex-1 min-w-[28%] sm:flex-none sm:w-40"><SelectValue placeholder="Category" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {CATEGORY_OPTIONS.map((c) => (
+              <SelectItem key={c} value={c}>{categoryConfig[c].label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="flex-1 min-w-[28%] sm:flex-none sm:w-40"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {STATUS_OPTIONS.map((s) => (
@@ -260,10 +529,10 @@ export default function AssetsPage() {
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="flex-1 min-w-[28%] sm:flex-none sm:w-40"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
-            {ASSET_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            {allTypesInUse.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -281,9 +550,11 @@ export default function AssetsPage() {
             </div>
             <h3 className="text-lg font-semibold text-ink-primary mb-1">No assets found</h3>
             <p className="text-sm text-ink-muted mb-4">
-              {search || statusFilter !== "all" || typeFilter !== "all"
+              {search || statusFilter !== "all" || categoryFilter !== "all" || typeFilter !== "all"
                 ? "Try adjusting your filters"
-                : isAdmin ? "Add your first asset to get started" : "No assets have been added yet"}
+                : myAssetsOnly
+                  ? "You don't have any assets assigned yet."
+                  : isAdmin ? "Add your first asset to get started" : "No assets have been added yet"}
             </p>
             {isAdmin && assets.length === 0 && (
               <Button onClick={openAdd} className="gap-2">
@@ -292,17 +563,49 @@ export default function AssetsPage() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phone: one card per asset */}
+          <ul className="md:hidden divide-y divide-border">
+            {filtered.map((asset) => {
+              const Icon = assetTypeIcon(asset.asset_type);
+              const sc = statusConfig[asset.status] ?? statusConfig.available;
+              const StatusIcon = sc.icon;
+              const cat = categoryConfig[asset.asset_category] ?? categoryConfig.IT;
+              return (
+                <li key={asset.id} onClick={() => setViewAsset(asset)} className="flex items-start gap-3 px-4 py-3.5 active:bg-muted/40 cursor-pointer">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium text-ink-primary text-sm leading-snug">{asset.asset_name}</p>
+                      <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0", sc.color)}>
+                        <StatusIcon className="h-3 w-3" />
+                        {sc.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-ink-muted mt-0.5 truncate">
+                      {cat.label} · {asset.asset_type}{asset.serial_number ? ` · ${asset.serial_number}` : ""}
+                    </p>
+                    <div className="mt-1.5 text-xs">
+                      <HolderCell holderName={asset.holder_name} />
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40 text-ink-muted text-xs uppercase tracking-wide">
                   <th className="text-left px-5 py-3 font-medium">Asset</th>
+                  <th className="text-left px-5 py-3 font-medium">Category</th>
                   <th className="text-left px-5 py-3 font-medium">Type</th>
                   <th className="text-left px-5 py-3 font-medium">Serial No.</th>
-                  <th className="text-left px-5 py-3 font-medium">Holder</th>
+                  <th className="text-left px-5 py-3 font-medium">Holder(s)</th>
                   <th className="text-left px-5 py-3 font-medium">Status</th>
                   <th className="text-left px-5 py-3 font-medium">Notes</th>
-                  <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -310,10 +613,13 @@ export default function AssetsPage() {
                   const Icon = assetTypeIcon(asset.asset_type);
                   const sc = statusConfig[asset.status] ?? statusConfig.available;
                   const StatusIcon = sc.icon;
+                  const cat = categoryConfig[asset.asset_category] ?? categoryConfig.IT;
+                  const CatIcon = cat.icon;
                   return (
                     <tr
                       key={asset.id}
-                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                      onClick={() => setViewAsset(asset)}
+                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
                     >
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
@@ -323,21 +629,18 @@ export default function AssetsPage() {
                           <span className="font-medium text-ink-primary">{asset.asset_name}</span>
                         </div>
                       </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", cat.color)}>
+                          <CatIcon className="h-3 w-3" />
+                          {cat.label}
+                        </span>
+                      </td>
                       <td className="px-5 py-3.5 text-ink-secondary">{asset.asset_type}</td>
                       <td className="px-5 py-3.5 text-ink-muted font-mono text-xs">
                         {asset.serial_number || "—"}
                       </td>
                       <td className="px-5 py-3.5">
-                        {asset.holder_name ? (
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
-                              {asset.holder_name.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="text-ink-primary">{asset.holder_name}</span>
-                          </div>
-                        ) : (
-                          <span className="text-ink-muted">—</span>
-                        )}
+                        <HolderCell holderName={asset.holder_name} />
                       </td>
                       <td className="px-5 py-3.5">
                         <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", sc.color)}>
@@ -348,38 +651,13 @@ export default function AssetsPage() {
                       <td className="px-5 py-3.5 text-ink-muted max-w-[180px] truncate">
                         {asset.notes || "—"}
                       </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-1 justify-end">
-                          <button
-                            onClick={() => setViewAsset(asset)}
-                            className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          {isAdmin && (
-                            <>
-                              <button
-                                onClick={() => openEdit(asset)}
-                                className="p-1.5 rounded-lg hover:bg-muted text-ink-muted hover:text-ink-primary transition-colors"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => setDeleteId(asset.id)}
-                                className="p-1.5 rounded-lg hover:bg-destructive/10 text-ink-muted hover:text-destructive transition-colors"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
@@ -398,7 +676,7 @@ export default function AssetsPage() {
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
-              <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+              <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5 max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-ink-primary">
                     {editAsset ? "Edit Asset" : "Add Asset"}
@@ -416,15 +694,98 @@ export default function AssetsPage() {
                       onChange={(e) => setForm(f => ({ ...f, asset_name: e.target.value }))}
                     />
                   </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-ink-muted mb-1.5 block">Category *</label>
+                    <Select
+                      value={form.asset_category}
+                      onValueChange={(v) => setForm(f => ({ ...f, asset_category: v as AssetCategory }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CATEGORY_OPTIONS.map(c => (
+                          <SelectItem key={c} value={c}>{categoryConfig[c].label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-medium text-ink-muted mb-1.5 block">Type</label>
-                      <Select value={form.asset_type} onValueChange={(v) => setForm(f => ({ ...f, asset_type: v }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {ASSET_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <label className="text-xs font-medium text-ink-muted mb-1.5 block">Type *</label>
+                      <Popover open={typeOpen} onOpenChange={setTypeOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            className="w-full justify-between font-normal"
+                          >
+                            <span className={cn("truncate", !form.asset_type && "text-ink-muted")}>
+                              {form.asset_type || "Select or type new…"}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                          <Command>
+                            <CommandInput
+                              placeholder="Search or type new type…"
+                              value={typeQuery}
+                              onValueChange={setTypeQuery}
+                            />
+                            <CommandList>
+                              <CommandEmpty>
+                                {queryTrim ? (
+                                  <button
+                                    type="button"
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted rounded-md flex items-center gap-2"
+                                    onClick={() => {
+                                      setForm(f => ({ ...f, asset_type: queryTrim }));
+                                      setTypeQuery("");
+                                      setTypeOpen(false);
+                                    }}
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    Add &ldquo;{queryTrim}&rdquo;
+                                  </button>
+                                ) : (
+                                  <span className="text-sm text-ink-muted">No types yet — start typing.</span>
+                                )}
+                              </CommandEmpty>
+                              <CommandGroup heading="Types">
+                                {typeSuggestions.map((t) => (
+                                  <CommandItem
+                                    key={t}
+                                    value={t}
+                                    onSelect={() => {
+                                      setForm(f => ({ ...f, asset_type: t }));
+                                      setTypeQuery("");
+                                      setTypeOpen(false);
+                                    }}
+                                  >
+                                    <Check className={cn("mr-2 h-4 w-4", form.asset_type === t ? "opacity-100" : "opacity-0")} />
+                                    {t}
+                                  </CommandItem>
+                                ))}
+                                {queryTrim && !exactExists && (
+                                  <CommandItem
+                                    value={`__add__${queryTrim}`}
+                                    onSelect={() => {
+                                      setForm(f => ({ ...f, asset_type: queryTrim }));
+                                      setTypeQuery("");
+                                      setTypeOpen(false);
+                                    }}
+                                  >
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Add &ldquo;{queryTrim}&rdquo;
+                                  </CommandItem>
+                                )}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-ink-muted mb-1.5 block">Status</label>
@@ -438,6 +799,7 @@ export default function AssetsPage() {
                       </Select>
                     </div>
                   </div>
+
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Serial Number</label>
                     <Input
@@ -446,25 +808,58 @@ export default function AssetsPage() {
                       onChange={(e) => setForm(f => ({ ...f, serial_number: e.target.value }))}
                     />
                   </div>
+
+                  {/* ── Multi-holder selector ── */}
                   <div>
-                    <label className="text-xs font-medium text-ink-muted mb-1.5 block">Holder Name</label>
-                    <Select
-                      value={form.holder_name || "__none__"}
-                      onValueChange={(v) => setForm(f => ({
-                        ...f,
-                        holder_name: v === "__none__" ? "" : v,
-                        status: v === "__none__" ? "available" : "assigned",
-                      }))}
-                    >
-                      <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Unassigned</SelectItem>
-                        {profiles.map(p => (
-                          <SelectItem key={p.id} value={p.full_name}>{p.full_name}</SelectItem>
+                    <label className="text-xs font-medium text-ink-muted mb-1.5 block flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" /> Holder(s)
+                      <span className="text-ink-muted/60 font-normal ml-1">— select one or more</span>
+                    </label>
+                    <HolderMultiSelect
+                      profiles={profiles}
+                      selected={form.holder_names}
+                      onChange={(names) =>
+                        setForm(f => ({
+                          ...f,
+                          holder_names: names,
+                          status: names.length > 0 ? "assigned" : "available",
+                        }))
+                      }
+                    />
+                    {/* Chips below the picker */}
+                    {form.holder_names.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {form.holder_names.map((name) => (
+                          <span
+                            key={name}
+                            className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs px-2.5 py-1 font-medium"
+                          >
+                            <div className="h-4 w-4 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold">
+                              {name.charAt(0).toUpperCase()}
+                            </div>
+                            {name}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setForm(f => {
+                                  const next = f.holder_names.filter(n => n !== name);
+                                  return {
+                                    ...f,
+                                    holder_names: next,
+                                    status: next.length > 0 ? "assigned" : "available",
+                                  };
+                                })
+                              }
+                              className="hover:text-destructive ml-0.5"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    )}
                   </div>
+
                   <div>
                     <label className="text-xs font-medium text-ink-muted mb-1.5 block">Notes</label>
                     <Input
@@ -527,6 +922,18 @@ export default function AssetsPage() {
                 </div>
                 <div className="divide-y divide-border text-sm">
                   <div className="flex items-center justify-between py-3">
+                    <span className="text-ink-muted font-medium">Category</span>
+                    {(() => {
+                      const cat = categoryConfig[viewAsset.asset_category] ?? categoryConfig.IT;
+                      const CI = cat.icon;
+                      return (
+                        <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", cat.color)}>
+                          <CI className="h-3 w-3" />{cat.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex items-center justify-between py-3">
                     <span className="text-ink-muted font-medium">Status</span>
                     {(() => {
                       const sc = statusConfig[viewAsset.status];
@@ -538,16 +945,27 @@ export default function AssetsPage() {
                       );
                     })()}
                   </div>
-                  <div className="flex items-center justify-between py-3">
-                    <span className="text-ink-muted font-medium">Holder</span>
-                    {viewAsset.holder_name ? (
-                      <div className="flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
-                          {viewAsset.holder_name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-ink-primary">{viewAsset.holder_name}</span>
+                  <div className="py-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <span className="text-ink-muted font-medium shrink-0">Holder(s)</span>
+                      <div className="flex flex-wrap gap-1.5 justify-end">
+                        {decodeHolders(viewAsset.holder_name).length === 0 ? (
+                          <span className="text-ink-muted">Unassigned</span>
+                        ) : (
+                          decodeHolders(viewAsset.holder_name).map((name) => (
+                            <span
+                              key={name}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary text-xs px-2.5 py-1 font-medium"
+                            >
+                              <div className="h-4 w-4 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold">
+                                {name.charAt(0).toUpperCase()}
+                              </div>
+                              {name}
+                            </span>
+                          ))
+                        )}
                       </div>
-                    ) : <span className="text-ink-muted">Unassigned</span>}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between py-3">
                     <span className="text-ink-muted font-medium">Serial No.</span>
@@ -561,9 +979,18 @@ export default function AssetsPage() {
                 <div className="flex gap-3 pt-1">
                   <Button variant="outline" className="flex-1" onClick={() => setViewAsset(null)}>Close</Button>
                   {isAdmin && (
-                    <Button className="flex-1" onClick={() => { setViewAsset(null); openEdit(viewAsset); }}>
-                      <Pencil className="h-4 w-4 mr-1.5" /> Edit
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        className="flex-1 text-destructive hover:text-destructive"
+                        onClick={() => { const id = viewAsset.id; setViewAsset(null); setDeleteId(id); }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1.5" /> Delete
+                      </Button>
+                      <Button className="flex-1" onClick={() => { openEdit(viewAsset); setViewAsset(null); }}>
+                        <Pencil className="h-4 w-4 mr-1.5" /> Edit
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>

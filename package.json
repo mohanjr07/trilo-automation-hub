@@ -20,7 +20,8 @@
     "android:build": "npm run build && rm -rf dist/download && cap sync android",
     "android:run": "npm run build && rm -rf dist/download && cap run android",
     "android:open": "cap open android",
-    "deploy:functions": "bash scripts/deploy-functions.sh"
+    "deploy:functions": "bash scripts/deploy-functions.sh",
+    "release:android": "node scripts/android-release.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
@@ -60,11 +61,15 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "docx": "^9.11.0",
+    "docx-preview": "^0.4.1",
     "embla-carousel-react": "^8.6.0",
     "exceljs": "^4.4.0",
     "framer-motion": "^11.0.0",
     "input-otp": "^1.4.2",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.462.0",
+    "mammoth": "^1.13.0",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",

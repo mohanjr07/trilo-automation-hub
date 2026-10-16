@@ -24,7 +24,7 @@ const iconColors: Record<string, string> = {
   task: "bg-accent-light text-primary",
   leave: "bg-warning-light text-warning",
   system: "bg-muted text-ink-muted",
-  payment: "bg-success-light text-success",
+  form: "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
 };
 
 // Fire a native desktop notification via whichever channel is available:
@@ -125,7 +125,7 @@ export default function NotificationBell() {
           const n = payload.new as any;
           const title = n.title ?? "Magic Aisles";
           const body = n.body ?? "";
-          const route = "/notifications";
+          const route = n.type === "form" && n.reference_id ? `/form-requests?id=${n.reference_id}` : n.type === "payment" ? "/payments" : n.type === "overtime" ? "/overtime" : "/notifications";
 
           // In-app toast (always shown when the window is visible).
           toast(title, { description: body });
@@ -178,11 +178,12 @@ export default function NotificationBell() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative text-ink-secondary hover:text-ink-primary transition-colors"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink-secondary hover:text-ink-primary hover:bg-muted transition-colors"
+        aria-label="Notifications"
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground px-1">
+          <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full ring-2 ring-card bg-destructive text-[10px] font-bold text-destructive-foreground px-1">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
@@ -194,7 +195,7 @@ export default function NotificationBell() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="absolute right-0 top-full mt-2 w-[calc(100vw-1.5rem)] max-w-[340px] rounded-card bg-card shadow-modal border border-border z-50"
+            className="fixed left-3 right-3 top-[calc(64px+var(--sat))] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-[340px] rounded-card bg-card shadow-modal border border-border z-50"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <h3 className="text-sm font-semibold text-ink-primary">Notifications</h3>
@@ -218,6 +219,13 @@ export default function NotificationBell() {
                     key={n.id}
                     onClick={() => {
                       if (!n.is_read) markRead.mutate(n.id);
+                      if (n.type === "form" && n.reference_id) {
+                        setOpen(false);
+                        navigate(`/form-requests?id=${n.reference_id}`);
+                      } else if (n.type === "payment" || n.type === "overtime") {
+                        setOpen(false);
+                        navigate(n.type === "payment" ? "/payments" : "/overtime");
+                      }
                     }}
                     className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-muted/50 ${
                       !n.is_read ? "bg-accent-light/30 border-l-2 border-l-primary" : ""

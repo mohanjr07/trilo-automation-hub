@@ -1,4 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
+import MobileSegments from "@/components/MobileSegments";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow, isToday, isYesterday, format } from "date-fns";
@@ -9,14 +10,18 @@ import EmptyState from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const iconColors: Record<string, string> = {
   task: "bg-accent-light text-primary",
   leave: "bg-warning-light text-warning",
   system: "bg-muted text-ink-muted",
+  payment: "bg-success-light text-success",
+  form: "bg-success-light text-success",
 };
 
 export default function NotificationsPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState("all");
@@ -32,7 +37,7 @@ export default function NotificationsPage() {
 
   const filtered = notifications.filter((n: any) => {
     if (filter === "unread") return !n.is_read;
-    if (filter === "task" || filter === "leave" || filter === "system") return n.type === filter;
+    if (filter === "task" || filter === "leave" || filter === "system" || filter === "payment" || filter === "form") return n.type === filter;
     return true;
   });
 
@@ -67,11 +72,11 @@ export default function NotificationsPage() {
   });
 
   const unreadCount = notifications.filter((n: any) => !n.is_read).length;
-  const tabs = ["all", "unread", "task", "leave", "system"];
+  const tabs = ["all", "unread", "task", "leave", "payment", "form", "system"];
 
   return (
     <AnimatedPage>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 md:mb-6">
         <div className="flex items-center gap-3">
           <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Notifications</h1>
           {unreadCount > 0 && (
@@ -85,7 +90,13 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      <div className="flex gap-1 mb-6 overflow-x-auto border-b border-border">
+      <MobileSegments
+        className="mb-5"
+        items={tabs.map((t) => ({ key: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
+        value={filter as string}
+        onChange={(k) => setFilter(k as any)}
+      />
+      <div className="hidden md:flex gap-1 mb-6 border-b border-border">
         {tabs.map((t) => (
           <button key={t} onClick={() => setFilter(t)}
             className={`relative px-4 py-2.5 text-sm font-medium capitalize whitespace-nowrap transition-colors ${filter === t ? "text-primary" : "text-ink-muted hover:text-ink-secondary"}`}>
@@ -105,7 +116,12 @@ export default function NotificationsPage() {
               <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-2">
                 {(items as any[]).map((n) => (
                   <motion.div key={n.id} variants={staggerItem}
-                    onClick={() => !n.is_read && markRead.mutate(n.id)}
+                    onClick={() => {
+                      if (!n.is_read) markRead.mutate(n.id);
+                      if (n.type === "form" && n.reference_id) navigate(`/form-requests?id=${n.reference_id}`);
+                      else if (n.type === "payment") navigate("/payments");
+                      else if (n.type === "overtime") navigate("/overtime");
+                    }}
                     className={`flex items-start gap-3 rounded-card p-4 cursor-pointer transition-colors ${
                       !n.is_read ? "bg-card shadow-card border-l-2 border-l-primary" : "bg-muted/50 hover:bg-muted"
                     }`}>

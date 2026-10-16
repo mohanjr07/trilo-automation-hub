@@ -24,13 +24,15 @@ const schema = z.object({
   assigned_to: z.array(z.string()).min(1, "At least one assignee is required"),
   priority: z.enum(["low", "medium", "high"]),
   status: z.enum(["todo", "in_progress", "on_hold", "completed"]),
-  deadline: z.string().min(1, "Deadline is required").refine(
-    (d) => d >= today(),
-    "Deadline must be today or a future date"
-  ),
+  deadline: z.string().optional(),
   category: z.string().max(50).optional(),
   project_id: z.string().optional(),
   project_team_id: z.string().optional(),
+}).superRefine((val, ctx) => {
+  const isSales = (val.category ?? "").trim().toLowerCase() === "sales";
+  if (!isSales && !val.deadline) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deadline"], message: "Deadline is required" });
+  }
 });
 type FormData = z.infer<typeof schema>;
 
@@ -91,8 +93,11 @@ export default function CreateTaskModal({ open, onClose, preselectedAssignee }: 
 
   // Managers can only assign tasks to their own team. Admins see everyone.
   // Employees/interns can assign to anyone — uses an RPC that bypasses RLS on profiles.
-  const isManagerRole = profile?.role === "manager";
-  const isEmployeeRole = profile?.role === "employee" || profile?.role === "intern";
+  // People allowed to assign tasks to anyone, whatever their role.
+  const ASSIGN_ANYONE_EMAILS: string[] = [];
+  const canAssignAnyone = ASSIGN_ANYONE_EMAILS.includes((user?.email ?? "").toLowerCase());
+  const isManagerRole = profile?.role === "manager" && !canAssignAnyone;
+  const isEmployeeRole = profile?.role === "employee" || profile?.role === "intern" || canAssignAnyone;
 
   const { data: employees = [] } = useQuery({
     queryKey: ["employees-list", isManagerRole ? `team:${user?.id}` : "all"],
@@ -205,7 +210,7 @@ export default function CreateTaskModal({ open, onClose, preselectedAssignee }: 
         assigned_to: data.assigned_to[0],
         priority: data.priority,
         status: data.status,
-        deadline: data.deadline,
+        deadline: data.deadline || null,
         category: data.category || null,
         assigned_by: user!.id,
         project_id: data.project_id || null,
@@ -266,7 +271,7 @@ export default function CreateTaskModal({ open, onClose, preselectedAssignee }: 
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-6 shadow-modal mx-4"
+            className="relative w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-modal bg-card p-5 sm:p-6 shadow-modal mx-4"
           >
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-heading text-xl font-bold text-ink-primary">Create Task</h2>
@@ -377,7 +382,7 @@ export default function CreateTaskModal({ open, onClose, preselectedAssignee }: 
                               </div>
                               <UserAvatar name={emp.full_name} avatarUrl={emp.avatar_url} size="sm" />
                               <span className="text-ink-primary">{emp.full_name}</span>
-                              {(emp.role === "admin" || emp.role === "manager") && (
+                              {((emp.role === "admin" || emp.role === "super_admin") || emp.role === "manager") && (
                                 <span className="ml-auto text-[10px] font-semibold bg-accent-light text-primary px-1.5 py-0.5 rounded-pill capitalize">{emp.role}</span>
                               )}
                             </button>
@@ -425,8 +430,8 @@ export default function CreateTaskModal({ open, onClose, preselectedAssignee }: 
                   </Select>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Deadline *</label>
-                  <Input {...register("deadline")} type="date" min={today()} className="h-10" />
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Deadline {(draft.category ?? "").trim().toLowerCase() === "sales" ? <span className="text-ink-muted font-normal">(optional)</span> : "*"}</label>
+                  <Input {...register("deadline")} type="date" className="h-10" />
                   {errors.deadline && <p className="mt-1 text-xs text-destructive">{errors.deadline.message}</p>}
                 </div>
               </div>

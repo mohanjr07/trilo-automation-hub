@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, X, FileText, Download, CheckCircle2, XCircle,
-  Clock, Banknote, Upload, Filter, Settings2, Gauge,
+  Clock, Banknote, Upload, Filter, Settings2, Gauge, ShieldCheck, Receipt, Loader2,
 } from "lucide-react";
+import { openFileLink } from "@/lib/nativeFiles";
+import { useWorkflowPeople } from "@/lib/workflowPeople";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -57,7 +59,12 @@ type PaymentRequest = {
   bill_file_path: string;
   bill_file_name: string | null;
   bill_mime_type: string | null;
-  status: "pending" | "approved" | "rejected" | "paid";
+  status: "pending_verification" | "pending" | "approved" | "rejected" | "paid";
+  verifier_id?: string | null;      // manager who checks the bill first
+  verified_at?: string | null;
+  verify_note?: string | null;
+  receipt_path?: string | null;     // payment proof uploaded when marked paid
+  receipt_name?: string | null;
   decided_by: string | null;
   decided_by_name: string | null;
   decided_at: string | null;
@@ -69,6 +76,7 @@ type PaymentRequest = {
 };
 
 const STATUS_META: Record<PaymentRequest["status"], { label: string; bg: string; text: string; icon: typeof Clock }> = {
+  pending_verification: { label: "Waiting for verification", bg: "bg-warning-light", text: "text-warning", icon: ShieldCheck },
   pending: { label: "Pending", bg: "bg-warning-light", text: "text-warning", icon: Clock },
   approved: { label: "Approved", bg: "bg-accent-light", text: "text-primary", icon: CheckCircle2 },
   rejected: { label: "Rejected", bg: "bg-destructive/10", text: "text-destructive", icon: XCircle },
@@ -83,6 +91,38 @@ const categoryLabel = (categories: ExpenseCategoryDef[], key: string | null) => 
   if (!c) return key || "—";
   return c.group_label ? `${c.group_label} – ${c.label}` : c.label;
 };
+
+/** Open a stored file (works in the iPhone web app too — the tab opens on the tap). */
+async function openStored(path: string) {
+  try {
+    await openFileLink(async () => {
+      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 300);
+      if (error) throw error;
+      return data.signedUrl;
+    });
+  } catch (err: any) {
+    toast.error("Couldn't open the file: " + (err?.message ?? ""));
+  }
+}
+
+/** Upload with a few retries — a dropped phone connection shows up as "Failed to fetch". */
+async function uploadWithRetry(path: string, file: File) {
+  let upErr: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      ({ error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined, upsert: false }));
+    } catch (e) { upErr = e; }
+    if (attempt > 0 && upErr && /exists|duplicate/i.test(String(upErr?.message ?? ""))) upErr = null;   // an earlier try got through
+    if (!upErr || !/fetch|network|load failed/i.test(String(upErr?.message ?? upErr))) break;
+    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+  }
+  if (upErr) {
+    const msg = String(upErr?.message ?? upErr);
+    throw new Error(/failed to fetch|network|load failed/i.test(msg)
+      ? "Could not reach the server — check your internet connection and try again (or attach a smaller photo)."
+      : msg);
+  }
+}
 
 function StatusBadge({ status }: { status: PaymentRequest["status"] }) {
   const meta = STATUS_META[status];
@@ -111,6 +151,26 @@ function RequestPaymentModal({
   const [amount, setAmount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [verifierId, setVerifierId] = useState("");
+
+  // A manager checks the bill first, then the admins approve.
+  // Managers and admins skip the check — their requests go straight to the admins.
+  const skipVerification = ["manager", "admin", "super_admin"].includes(profile?.role ?? "");
+  const { data: managers = [] } = useQuery({
+    queryKey: ["payment-managers"],
+    enabled: open && !skipVerification,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_active_profiles");
+      if (error) throw error;
+      return ((data ?? []) as { id: string; full_name: string; role: string }[])
+        .filter((p) => p.role === "manager" && p.id !== user?.id)
+        .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    },
+  });
+  useEffect(() => {
+    // pre-select the requester's own manager when there is one
+    if (open && !verifierId && profile?.manager_id && managers.some((m) => m.id === profile.manager_id)) setVerifierId(profile.manager_id);
+  }, [open, managers, profile?.manager_id, verifierId]);
 
   const isOtherProject = projectId === "__other__";
 
@@ -183,6 +243,7 @@ function RequestPaymentModal({
     setPurpose("");
     setAmount("");
     setFile(null);
+    setVerifierId("");
   };
 
   // Blocks typing an amount over the requester's tier cap for the picked
@@ -219,16 +280,13 @@ function RequestPaymentModal({
       return;
     }
     if (!file) { toast.error("Attach the bill / receipt"); return; }
+    if (!skipVerification && !verifierId) { toast.error("Choose the manager who will verify the bill"); return; }
 
     setSubmitting(true);
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${user!.id}/${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
-        contentType: file.type || undefined,
-        upsert: false,
-      });
-      if (upErr) throw upErr;
+      await uploadWithRetry(path, file);
 
       const { error: insErr } = await supabase.from("payment_requests").insert({
         requester_id: user!.id,
@@ -247,14 +305,17 @@ function RequestPaymentModal({
         bill_file_path: path,
         bill_file_name: file.name,
         bill_mime_type: file.type || null,
-      });
+        // the database sends it to this manager first (status "pending_verification")
+        verifier_id: skipVerification ? null : verifierId,
+      } as any);
       if (insErr) {
         await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
         throw insErr;
       }
 
       queryClient.invalidateQueries({ queryKey: ["payment-requests"] });
-      toast.success("Payment request submitted");
+      toast.success(skipVerification ? "Payment request sent to the admins for approval"
+        : `Sent to ${managers.find((m) => m.id === verifierId)?.full_name ?? "the manager"} for verification`);
       reset();
       onClose();
     } catch (err: any) {
@@ -388,6 +449,18 @@ function RequestPaymentModal({
                   placeholder="0.00"
                 />
               </div>
+              {!skipVerification && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink-primary">Verified by (manager) *</label>
+                  <Select value={verifierId || undefined} onValueChange={setVerifierId}>
+                    <SelectTrigger><SelectValue placeholder="Choose the manager who checks this bill" /></SelectTrigger>
+                    <SelectContent>
+                      {managers.map((m) => <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-ink-muted">The manager checks the bill first, then it goes to the admins for approval.</p>
+                </div>
+              )}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-ink-primary">Bill / Receipt *</label>
                 <label className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border p-5 text-center hover:border-primary/50 hover:bg-primary/5">
@@ -424,7 +497,34 @@ function PaymentDetailModal({
   const queryClient = useQueryClient();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [comment, setComment] = useState("");          // optional comment while verifying / approving
+  const [paying, setPaying] = useState(false);
+  const [receipt, setReceipt] = useState<File | null>(null);
   const { user } = useAuth();
+  useEffect(() => { setRejecting(false); setReason(""); setComment(""); setPaying(false); setReceipt(null); }, [request?.id]);
+  const isVerifier = !!request && request.status === "pending_verification" && request.verifier_id === user?.id;
+  const { data: names = {} } = useQuery({
+    queryKey: ["profile-names-min"],
+    queryFn: async () => {
+      const { data } = await supabase.rpc("get_active_profiles");
+      return Object.fromEntries(((data ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name])) as Record<string, string>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const verify = useMutation({
+    mutationFn: async ({ ok, note }: { ok: boolean; note?: string }) => {
+      if (!request) return;
+      const { error } = await (supabase as any).rpc("verify_payment_request", { p_id: request.id, p_ok: ok, p_note: note?.trim() || null });
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ["payment-requests"] });
+      toast.success(v.ok ? "Verified — sent to the admins for approval" : "Request rejected");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Couldn't save"),
+  });
 
   const decide = useMutation({
     mutationFn: async ({ status, decisionNote }: { status: "approved" | "rejected"; decisionNote?: string }) => {
@@ -450,27 +550,28 @@ function PaymentDetailModal({
   const markPaid = useMutation({
     mutationFn: async () => {
       if (!request) return;
-      const { error } = await supabase.from("payment_requests").update({
-        status: "paid",
-        paid_by: user!.id,
-        paid_at: new Date().toISOString(),
-      }).eq("id", request.id);
-      if (error) throw error;
+      if (!receipt) throw new Error("Upload the payment receipt");
+      const path = `${user!.id}/receipt_${Date.now()}_${receipt.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      await uploadWithRetry(path, receipt);
+      // marks it paid and tells the requester, the verifier and the approver
+      const { error } = await (supabase as any).rpc("mark_payment_paid", { p_id: request.id, p_receipt_path: path, p_receipt_name: receipt.name });
+      if (error) {
+        await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payment-requests"] });
       toast.success("Marked as paid");
       onClose();
     },
-    onError: () => toast.error("Couldn't mark this as paid"),
+    onError: (e: any) => toast.error(e?.message ?? "Couldn't mark this as paid"),
   });
 
   const viewBill = async () => {
     if (!request) return;
     try {
-      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(request.bill_file_path, 60);
-      if (error) throw error;
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      await openStored(request.bill_file_path);
     } catch (err: any) {
       toast.error("Couldn't open the bill: " + (err?.message ?? ""));
     }
@@ -545,6 +646,17 @@ function PaymentDetailModal({
                 </button>
               </div>
             </div>
+            {request.verifier_id && (
+              <div>
+                <p className="text-xs font-medium text-ink-muted">Verified by</p>
+                <p className="text-sm text-ink-primary">
+                  {names[request.verifier_id] ?? "Manager"}
+                  {request.verified_at ? ` · ✓ ${format(new Date(request.verified_at), "MMM d, h:mm a")}`
+                    : request.status === "pending_verification" ? " · waiting" : ""}
+                </p>
+                {request.verify_note && <p className="mt-0.5 text-xs text-ink-muted">"{request.verify_note}"</p>}
+              </div>
+            )}
             {request.decided_by_name && (
               <div>
                 <p className="text-xs font-medium text-ink-muted">{request.status === "rejected" ? "Rejected by" : "Approved by"}</p>
@@ -554,12 +666,17 @@ function PaymentDetailModal({
                 {request.decision_note && <p className="mt-0.5 text-xs text-ink-muted">"{request.decision_note}"</p>}
               </div>
             )}
-            {request.paid_by_name && (
+            {(request.paid_by_name || request.paid_at) && (
               <div>
                 <p className="text-xs font-medium text-ink-muted">Paid by</p>
                 <p className="text-sm text-ink-primary">
-                  {request.paid_by_name}{request.paid_at && ` · ${format(new Date(request.paid_at), "MMM d, h:mm a")}`}
+                  {request.paid_by_name ?? "Accounts"}{request.paid_at && ` · ${format(new Date(request.paid_at), "MMM d, h:mm a")}`}
                 </p>
+                {request.receipt_path && (
+                  <button onClick={() => openStored(request.receipt_path!)} className="mt-1 flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                    <Receipt className="h-4 w-4" /> View payment receipt
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -576,23 +693,70 @@ function PaymentDetailModal({
                 </div>
               </div>
             ) : (
-              <div className="mt-4 flex justify-end gap-2">
-                <Button type="button" variant="outline" className="gap-1.5" disabled={decide.isPending} onClick={() => setRejecting(true)}>
+              <div className="mt-4 space-y-2">
+              <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} placeholder="Comment (optional)" />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" className="gap-1.5" disabled={decide.isPending} onClick={() => { setReason(comment); setRejecting(true); }}>
                   <XCircle className="h-4 w-4" /> Reject
                 </Button>
-                <Button type="button" className="gap-1.5" disabled={decide.isPending} onClick={() => decide.mutate({ status: "approved" })}>
+                <Button type="button" className="gap-1.5" disabled={decide.isPending} onClick={() => decide.mutate({ status: "approved", decisionNote: comment })}>
                   <CheckCircle2 className="h-4 w-4" /> Approve
                 </Button>
+              </div>
+              </div>
+            )
+          )}
+
+          {isVerifier && (
+            rejecting ? (
+              <div className="mt-4 space-y-2">
+                <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this bill being rejected?" rows={2} autoFocus />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setRejecting(false)}>Cancel</Button>
+                  <Button type="button" variant="destructive" disabled={!reason.trim() || verify.isPending} onClick={() => verify.mutate({ ok: false, note: reason })}>
+                    Confirm reject
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} placeholder="Comment (optional)" />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" className="gap-1.5" disabled={verify.isPending} onClick={() => { setReason(comment); setRejecting(true); }}>
+                    <XCircle className="h-4 w-4" /> Reject
+                  </Button>
+                  <Button type="button" className="gap-1.5" disabled={verify.isPending} onClick={() => verify.mutate({ ok: true, note: comment })}>
+                    <ShieldCheck className="h-4 w-4" /> Verified
+                  </Button>
+                </div>
               </div>
             )
           )}
 
           {isAccountant && request.status === "approved" && (
-            <div className="mt-4 flex justify-end">
-              <Button type="button" className="gap-1.5" disabled={markPaid.isPending} onClick={() => markPaid.mutate()}>
-                <Banknote className="h-4 w-4" /> {markPaid.isPending ? "Marking..." : "Mark as Paid"}
-              </Button>
-            </div>
+            paying ? (
+              <div className="mt-4 space-y-2 rounded-lg border border-border p-3">
+                <p className="text-sm font-medium text-ink-primary">Upload the payment receipt *</p>
+                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-3 text-sm hover:bg-muted/40">
+                  <Upload className="h-4 w-4 text-ink-muted" />
+                  <span className="truncate text-ink-secondary">{receipt ? receipt.name : "Choose a photo or PDF of the payment"}</span>
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setReceipt(e.target.files?.[0] ?? null)} />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => { setPaying(false); setReceipt(null); }}>Cancel</Button>
+                  <Button type="button" className="gap-1.5" disabled={!receipt || markPaid.isPending} onClick={() => markPaid.mutate()}>
+                    {markPaid.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />}
+                    {markPaid.isPending ? "Saving…" : "Confirm payment done"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 flex justify-end">
+                <Button type="button" className="gap-1.5" onClick={() => setPaying(true)}>
+                  <Banknote className="h-4 w-4" /> Payment done
+                </Button>
+              </div>
+            )
           )}
         </motion.div>
       </div>
@@ -607,7 +771,9 @@ export default function PaymentsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | PaymentRequest["status"]>("all");
 
   const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
-  const isAccountant = (profile?.department ?? "").trim().toLowerCase() === "accountant";
+  const wp = useWorkflowPeople();
+  // pays approved requests: the Accountant department or the Accounts person (Settings → Workflow people)
+  const isAccountant = (profile?.department ?? "").trim().toLowerCase() === "accountant" || wp.has("accounts", user?.id);
 
   // Uses a SECURITY DEFINER RPC rather than a direct `.from("projects")`
   // select — the projects table's own RLS only lets a user read projects
@@ -661,14 +827,16 @@ export default function PaymentsPage() {
 
   const counts = useMemo(() => ({
     total: requests.length,
-    pending: requests.filter((r) => r.status === "pending").length,
+    pending: requests.filter((r) => r.status === "pending" || r.status === "pending_verification").length,
     approved: requests.filter((r) => r.status === "approved").length,
     paid: requests.filter((r) => r.status === "paid").length,
     rejected: requests.filter((r) => r.status === "rejected").length,
   }), [requests]);
 
   const filtered = useMemo(
-    () => (statusFilter === "all" ? requests : requests.filter((r) => r.status === statusFilter)),
+    () => (statusFilter === "all" ? requests
+      : statusFilter === "pending" ? requests.filter((r) => r.status === "pending" || r.status === "pending_verification")
+      : requests.filter((r) => r.status === statusFilter)),
     [requests, statusFilter]
   );
 
@@ -739,12 +907,15 @@ export default function PaymentsPage() {
                     </div>
                     <p className="mt-0.5 text-sm text-ink-muted">{r.purpose}</p>
                     <p className="mt-1 text-xs text-ink-muted">
-                      {(isAdmin || isAccountant) && r.requester_name ? `${r.requester_name} · ` : ""}
+                      {(isAdmin || isAccountant || r.requester_id !== user.id) && r.requester_name ? `${r.requester_name} · ` : ""}
                       {r.payment_for === "expense"
                         ? (r.expense_category ? `${categoryLabel(categories, r.expense_category)} · ` : "")
                         : (r.project_name ? `${r.project_name} · ` : "")}
                       {format(new Date(r.created_at), "MMM d, yyyy")}
                     </p>
+                    {r.status === "pending_verification" && r.verifier_id === user.id && (
+                      <p className="mt-1 text-xs font-medium text-warning">Waiting for your verification</p>
+                    )}
                   </div>
                 </div>
               </div>

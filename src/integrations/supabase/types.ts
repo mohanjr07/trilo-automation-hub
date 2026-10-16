@@ -27,6 +27,7 @@ export type Database = {
           serial_number: string | null
           status: string
           updated_at: string
+          asset_category: string
         }
         Insert: {
           asset_name: string
@@ -40,6 +41,7 @@ export type Database = {
           serial_number?: string | null
           status?: string
           updated_at?: string
+          asset_category?: string
         }
         Update: {
           asset_name?: string
@@ -53,6 +55,7 @@ export type Database = {
           serial_number?: string | null
           status?: string
           updated_at?: string
+          asset_category?: string
         }
         Relationships: [
           {
@@ -699,6 +702,8 @@ export type Database = {
           phone: string | null
           position: string | null
           role: string | null
+          date_of_birth: string | null
+          joined_at: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -714,6 +719,8 @@ export type Database = {
           phone?: string | null
           position?: string | null
           role?: string | null
+          date_of_birth?: string | null
+          joined_at?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -729,6 +736,8 @@ export type Database = {
           phone?: string | null
           position?: string | null
           role?: string | null
+          date_of_birth?: string | null
+          joined_at?: string | null
         }
         Relationships: [
           {
@@ -1301,6 +1310,7 @@ export type Database = {
           status: string | null
           title: string
           updated_at: string | null
+          completed_at: string | null
         }
         Insert: {
           assigned_by: string
@@ -1317,6 +1327,7 @@ export type Database = {
           status?: string | null
           title: string
           updated_at?: string | null
+          completed_at?: string | null
         }
         Update: {
           assigned_by?: string
@@ -1333,6 +1344,7 @@ export type Database = {
           status?: string | null
           title?: string
           updated_at?: string | null
+          completed_at?: string | null
         }
         Relationships: [
           {
@@ -1581,6 +1593,104 @@ export type Database = {
           },
         ]
       }
+      production_forms: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          current_number: number
+          description: string | null
+          field_locator: Json | null
+          file_type: string
+          id: string
+          original_filename: string
+          ref_number_enabled: boolean
+          ref_padding: number
+          ref_prefix: string
+          storage_path: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          current_number?: number
+          description?: string | null
+          field_locator?: Json | null
+          file_type: string
+          id?: string
+          original_filename: string
+          ref_number_enabled?: boolean
+          ref_padding?: number
+          ref_prefix?: string
+          storage_path: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          current_number?: number
+          description?: string | null
+          field_locator?: Json | null
+          file_type?: string
+          id?: string
+          original_filename?: string
+          ref_number_enabled?: boolean
+          ref_padding?: number
+          ref_prefix?: string
+          storage_path?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "production_forms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      production_form_opens: {
+        Row: {
+          form_id: string
+          id: string
+          opened_at: string
+          opened_by: string | null
+          reference_value: string
+        }
+        Insert: {
+          form_id: string
+          id?: string
+          opened_at?: string
+          opened_by?: string | null
+          reference_value: string
+        }
+        Update: {
+          form_id?: string
+          id?: string
+          opened_at?: string
+          opened_by?: string | null
+          reference_value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "production_form_opens_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "production_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "production_form_opens_opened_by_fkey"
+            columns: ["opened_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1684,6 +1794,19 @@ export type Database = {
       user_in_project: {
         Args: { _project_id: string; _uid: string }
         Returns: boolean
+      }
+      open_production_form: {
+        Args: { p_form_id: string }
+        Returns: {
+          current_number: number
+          field_locator: Json
+          file_type: string
+          ref_padding: number
+          ref_prefix: string
+          reference_value: string
+          storage_path: string
+          title: string
+        }[]
       }
     }
     Enums: {

@@ -12,6 +12,8 @@ const config: CapacitorConfig = {
     errorPath: 'offline.html',
   },
   android: { allowMixedContent: false },
+  // build number the website reads to offer in-app updates (see src/components/NativeAppUpdate.tsx)
+  appendUserAgent: 'MaplTaskFlowApp/2',
   plugins: {
     PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
   },

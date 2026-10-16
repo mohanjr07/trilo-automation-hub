@@ -1,4 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import LiveSync from "@/components/LiveSync";
+import AutoRefresh from "@/components/AutoRefresh";
+import NativeAppUpdate from "@/components/NativeAppUpdate";
 import { BrowserRouter, HashRouter, Route, Routes, Navigate } from "react-router-dom";
 
 // When running inside the Electron desktop build, the app is loaded over
@@ -37,13 +40,23 @@ import KraKpiPage from "@/pages/KraKpiPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import SalesTrackerPage from "@/pages/SalesTrackerPage";
 import PaymentsPage from "@/pages/PaymentsPage";
+import ProductionFormsPage from "@/pages/ProductionFormsPage";
+import FormRequestsPage from "@/pages/FormRequestsPage";
+import CompletedTasksPage from "@/pages/CompletedTasksPage";
+import PeoplePage from "@/pages/PeoplePage";
+import BirthdaysPage from "@/pages/BirthdaysPage";
+import OvertimePage from "@/pages/OvertimePage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      // live updates come from <LiveSync/> (one realtime connection per device);
+      // this slow poll is only a safety net. Data also refreshes when the app comes back.
+      refetchInterval: 120_000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
   },
 });
@@ -61,8 +74,11 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Sonner position="bottom-right" />
+      <AutoRefresh />
+      <NativeAppUpdate />
       <Router>
         <AuthProvider>
+          <LiveSync />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -101,7 +117,14 @@ const App = () => (
               <Route path="/intern-tasks" element={<ProtectedRoute allowedRoles={["intern"]}><TasksPage myTasksOnly /></ProtectedRoute>} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/notes" element={<NotesPage />} />
-              <Route path="/assets" element={<ProtectedRoute allowedRoles={["super_admin", "admin", "manager"]}><AssetsPage /></ProtectedRoute>} />
+              <Route path="/assets" element={<AssetsPage />} />
+              <Route path="/completed-tasks" element={<CompletedTasksPage />} />
+              <Route path="/people" element={<PeoplePage />} />
+              <Route path="/birthdays" element={<BirthdaysPage />} />
+              {/* Forms — visible to every signed-in role; upload/delete are admin-only (UI + RLS). */}
+              <Route path="/production-forms" element={<ProductionFormsPage />} />
+              <Route path="/form-requests" element={<FormRequestsPage />} />
+              <Route path="/overtime" element={<OvertimePage />} />
               <Route path="/kra-kpi" element={<KraKpiPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/profile" element={<ProfilePage />} />

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, X, ChevronDown, ChevronRight, FolderKanban,
   MoreVertical, Pencil, Trash2, UserPlus, GripVertical, Check,
-  CheckSquare, ArrowLeft,
+  CheckSquare, ArrowLeft, IndianRupee,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -14,7 +14,7 @@ import UserAvatar from "@/components/UserAvatar";
 import PriorityBadge from "@/components/PriorityBadge";
 import StatusBadge from "@/components/StatusBadge";
 import TaskDetailModal from "@/components/TaskDetailModal";
-import ProjectPhotosSection from "@/components/ProjectPhotoCapture";
+import ProjectExpensesDialog from "@/components/ProjectPaymentsDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,17 +44,20 @@ const PROJECT_COLORS = [
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, user, profile } = useAuth();
+  // project payments are for admins only (managers also count as "isAdmin" here)
+  const canSeePayments = ["admin", "super_admin"].includes(profile?.role ?? "");
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [expensesOpen, setExpensesOpen] = useState(false);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["projects"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("projects").select("*").order("created_at", { ascending: false });
+        .from("projects").select("*").order("name", { ascending: true });
       if (error) throw error;
       return data ?? [];
     },
@@ -110,16 +113,23 @@ export default function ProjectsPage() {
 
   return (
     <AnimatedPage>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Projects</h1>
           <p className="text-sm text-ink-muted">{projects.length} project{projects.length !== 1 ? "s" : ""}</p>
         </div>
-        {isAdmin && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" /> New Project
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canSeePayments && (
+            <Button variant="outline" onClick={() => setExpensesOpen(true)} className="gap-2">
+              <IndianRupee className="h-4 w-4" /> Expenses
+            </Button>
+          )}
+          {isAdmin && (
+            <Button onClick={() => setCreateOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" /> New Project
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -163,6 +173,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
+      {canSeePayments && <ProjectExpensesDialog open={expensesOpen} onClose={() => setExpensesOpen(false)} projects={projects} />}
       {isAdmin && (
         <ProjectFormModal open={createOpen} onClose={() => setCreateOpen(false)} />
       )}
@@ -283,13 +294,13 @@ function ProjectCard({
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       {/* Project Header */}
       <div
-        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
+        className="flex items-center gap-3 px-4 sm:px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
         onClick={onToggle}
       >
         <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: project.color }} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="font-heading text-base font-bold text-ink-primary">{project.name}</h2>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="font-heading text-base font-bold text-ink-primary leading-snug">{project.name}</h2>
             <span className="text-xs text-ink-muted bg-muted px-2 py-0.5 rounded-pill">
               {projectMembers.length} member{projectMembers.length !== 1 ? "s" : ""}
             </span>
@@ -303,7 +314,7 @@ function ProjectCard({
         </div>
 
         {/* Avatar stack */}
-        <div className="flex -space-x-2 mr-2">
+        <div className="hidden sm:flex -space-x-2 mr-2">
           {projectMembers.slice(0, 5).map((m) => (
             <div key={m.id} className="ring-2 ring-card rounded-full">
               <UserAvatar name={m.user?.full_name ?? ""} avatarUrl={m.user?.avatar_url} size="sm" />
@@ -320,7 +331,7 @@ function ProjectCard({
           <div onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="text-ink-muted hover:text-ink-primary p-1 rounded">
+                <button className="text-ink-muted hover:text-ink-primary p-2 -m-1 rounded">
                   <MoreVertical className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
@@ -347,12 +358,6 @@ function ProjectCard({
             className="overflow-hidden"
           >
             <div className="border-t border-border px-5 py-4">
-
-              {(isAdmin || isMemberOfProject) && (
-                <div className="mb-4">
-                  <ProjectPhotosSection projectId={project.id} />
-                </div>
-              )}
 
               {/* ── ADMIN VIEW ── */}
               {isAdmin ? (
@@ -804,7 +809,7 @@ function ProjectFormModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-[460px] rounded-xl bg-card p-6 shadow-xl mx-4"
+        className="relative w-full max-w-[460px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-xl bg-card p-5 sm:p-6 shadow-xl mx-4"
       >
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-heading text-xl font-bold text-ink-primary">
@@ -877,7 +882,7 @@ function AddTeamModal({ projectId, onClose }: { projectId: string; onClose: () =
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-[360px] rounded-xl bg-card p-6 shadow-xl mx-4"
+        className="relative w-full max-w-[360px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-xl bg-card p-5 sm:p-6 shadow-xl mx-4"
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-heading text-lg font-bold text-ink-primary">Add Team</h3>
@@ -987,7 +992,7 @@ function AssignMemberModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-[420px] rounded-xl bg-card p-6 shadow-xl mx-4"
+        className="relative w-full max-w-[420px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-xl bg-card p-5 sm:p-6 shadow-xl mx-4"
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-heading text-lg font-bold text-ink-primary">Assign Members</h3>

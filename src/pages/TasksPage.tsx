@@ -1,12 +1,13 @@
+import MobileSegments from "@/components/MobileSegments";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Plus, Search, X as XIcon, CheckSquare, LayoutGrid, List,
-  Pencil, Trash2, Check,
+  Pencil, Trash2, Check, CheckCircle2,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -53,6 +54,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
   const [createOpen, setCreateOpen] = useState(() => sessionStorage.getItem(TASK_CREATE_OPEN_KEY) === "1");
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [mobileCol, setMobileCol] = useState<string | null>(null); // phone: which status column is shown
 
   // Drag-and-drop state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -75,7 +77,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
     if (editingColKey) editInputRef.current?.focus();
   }, [editingColKey]);
 
-  const canCreateTasks = !myTasksOnly && (profile?.role === "admin" || profile?.role === "manager" || profile?.role === "employee" || profile?.role === "intern");
+  const canCreateTasks = !myTasksOnly && ((profile?.role === "admin" || profile?.role === "super_admin") || profile?.role === "manager" || profile?.role === "employee" || profile?.role === "intern");
   // Renaming is PER-USER (stored in user_task_column_prefs) so every signed-in
   // user — employee, intern, manager, admin — can rename their own view on
   // ANY board (Tasks or My Tasks).
@@ -115,11 +117,15 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
           .select("id")
           .eq("manager_id", user!.id);
         const teamIds = [user!.id, ...((teamRows ?? []).map((r: any) => r.id))];
-        const { data: assigneeRows } = await supabase
-          .from("task_assignees")
-          .select("task_id")
-          .in("user_id", teamIds);
-        const taskIds = Array.from(new Set((assigneeRows ?? []).map((a: any) => a.task_id)));
+        // …plus every task the manager created, whoever it's assigned to.
+        const [{ data: assigneeRows }, { data: createdRows }] = await Promise.all([
+          supabase.from("task_assignees").select("task_id").in("user_id", teamIds),
+          supabase.from("tasks").select("id").eq("assigned_by", user!.id),
+        ]);
+        const taskIds = Array.from(new Set([
+          ...(assigneeRows ?? []).map((a: any) => a.task_id),
+          ...(createdRows ?? []).map((t: any) => t.id),
+        ]));
         if (!taskIds.length) return [];
         const { data } = await supabase
           .from("tasks")
@@ -162,6 +168,15 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
     },
     enabled: !!user,
   });
+
+  // Keep the open task detail in sync with the latest tasks data so that
+  // edits (e.g. assigning a project) reflect immediately in the modal.
+  useEffect(() => {
+    if (!selectedTask) return;
+    const fresh = (tasks as any[])?.find((t) => t.id === selectedTask.id);
+    if (fresh && fresh !== selectedTask) setSelectedTask(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
 
   const { data: columns = DEFAULT_TASK_COLUMNS } = useTaskColumns();
 
@@ -267,7 +282,8 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
       if (!col.id) return; // hardcoded defaults have no id — nothing to delete
       // Move any tasks in this column back to the first surviving column
       const fallback = columns.find((c) => c.key !== col.key) ?? DEFAULT_TASK_COLUMNS[0];
-      await supabase.from("tasks").update({ status: fallback.key }).eq("status", col.key);
+      const fallbackCompletedAt = fallback.key === "completed" ? new Date().toISOString() : null;
+      await supabase.from("tasks").update({ status: fallback.key, completed_at: fallbackCompletedAt }).eq("status", col.key);
 
       if (col.is_personal) {
         if (!user?.id) throw new Error("You must be signed in");
@@ -307,12 +323,23 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
   };
   const cancelRename = () => setEditingColKey(null);
 
+  // Tasks completed more than 7 days ago are archived to the Completed Tasks page
+  // and removed from the main board so the Completed column doesn't pile up.
+  const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
   const filteredTasks = tasks.filter((t: any) => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
     if (assigneeFilter !== "all") {
       const assignees = t.task_assignees?.map((a: any) => a.user_id) ?? [];
       if (!assignees.includes(assigneeFilter)) return false;
+    }
+    if (t.status === "completed") {
+      const tsRaw = t.completed_at ?? t.updated_at;
+      if (tsRaw) {
+        const ts = new Date(tsRaw).getTime();
+        if (ts > 0 && ts < sevenDaysAgoMs) return false;
+      }
     }
     return true;
   });
@@ -360,7 +387,8 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
       (old: any[]) => old.map((t: any) => t.id === draggedTaskId ? { ...t, status: targetStatus } : t)
     );
     setDraggedTaskId(null);
-    const { error } = await supabase.from("tasks").update({ status: targetStatus }).eq("id", draggedTaskId);
+    const completedAt = targetStatus === "completed" ? new Date().toISOString() : null;
+    const { error } = await supabase.from("tasks").update({ status: targetStatus, completed_at: completedAt }).eq("id", draggedTaskId);
     if (error) {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast.error("Failed to update task status");
@@ -372,9 +400,9 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
   return (
     <AnimatedPage>
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">{pageTitle}</h1>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Board / List toggle */}
           <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-card">
             <button
@@ -394,6 +422,12 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
               <List className="h-3.5 w-3.5" /> List
             </button>
           </div>
+          <Link
+            to="/completed-tasks"
+            title="Completed Tasks" className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-ink-secondary hover:bg-muted transition-colors"
+          >
+            <CheckCircle2 className="h-4 w-4 text-success" /> <span className="hidden sm:inline">Completed Tasks</span>
+          </Link>
           {canCreateTasks && (
             <Button onClick={handleOpenCreate} className="gap-2">
               <Plus className="h-4 w-4" /> Create Task
@@ -404,12 +438,12 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks..." className="pl-9 h-10" />
         </div>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[140px] h-10"><SelectValue placeholder="Priority" /></SelectTrigger>
+          <SelectTrigger className="flex-1 sm:flex-none sm:w-[140px] h-10"><SelectValue placeholder="Priority" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Priority</SelectItem>
             <SelectItem value="high">High</SelectItem>
@@ -419,7 +453,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
         </Select>
         {isAdmin && !myTasksOnly && (
           <Select value={assigneeFilter} onValueChange={setAssignee}>
-            <SelectTrigger className="w-[180px] h-10"><SelectValue placeholder="Assignee" /></SelectTrigger>
+            <SelectTrigger className="flex-1 sm:flex-none sm:w-[180px] h-10"><SelectValue placeholder="Assignee" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Members</SelectItem>
               {members.map((m: any) => (
@@ -449,7 +483,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
 
       {/* Content */}
       {isLoading ? (
-        <div className={viewMode === "board" ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" : "space-y-3"}>
+        <div className={viewMode === "board" ? "grid grid-cols-2 xl:grid-cols-4 gap-4" : "space-y-3"}>
           {Array.from({ length: viewMode === "board" ? 4 : 5 }).map((_, i) => (
             <div key={i} className="h-40 rounded-xl bg-muted animate-pulse" />
           ))}
@@ -464,6 +498,14 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
         />
       ) : viewMode === "board" ? (
         /* ─── BOARD VIEW ─── */
+        <>
+        {/* Phone: pick a status, see that column only (no sideways scrolling) */}
+        <MobileSegments
+          className="mb-3"
+          items={columns.map((c) => ({ key: c.key, label: c.label, count: (tasksByStatus[c.key] ?? []).length }))}
+          value={mobileCol ?? columns[0]?.key}
+          onChange={(k) => setMobileCol(k)}
+        />
         <div
           className="grid gap-4 items-start"
           style={{
@@ -484,7 +526,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
                   if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol(null);
                 }}
                 onDrop={() => { handleTaskDrop(col.key); setDragOverCol(null); }}
-                className={`rounded-xl border-2 flex flex-col overflow-hidden transition-colors group ${
+                className={`${col.key !== (mobileCol ?? columns[0]?.key) ? "hidden md:flex" : "flex"} rounded-xl border-2 flex-col overflow-hidden transition-colors group ${
                   isDragTarget ? "border-primary bg-accent-light/40" : "border-border bg-muted/30"
                 }`}
               >
@@ -701,6 +743,7 @@ export default function TasksPage({ myTasksOnly = false }: { myTasksOnly?: boole
             </div>
           )}
         </div>
+        </>
       ) : (
         /* ─── LIST VIEW ─── */
         filteredTasks.length === 0 ? (

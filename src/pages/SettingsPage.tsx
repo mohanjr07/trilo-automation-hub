@@ -1,6 +1,8 @@
 import { useState } from "react";
+import MobileSegments from "@/components/MobileSegments";
 import { motion } from "framer-motion";
-import { User, Bell, Calendar, Lock } from "lucide-react";
+import { User, Bell, Calendar, Lock, Workflow } from "lucide-react";
+import WorkflowPeopleSettings from "@/components/WorkflowPeopleSettings";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +18,7 @@ const sections = [
   { key: "profile", label: "Profile", icon: User },
   { key: "notifications", label: "Notifications", icon: Bell },
   { key: "leave", label: "Leave Policy", icon: Calendar },
+  { key: "workflow", label: "Workflow people", icon: Workflow },
   { key: "security", label: "Security", icon: Lock },
 ] as const;
 
@@ -36,14 +39,21 @@ export default function SettingsPage() {
   const [active, setActive] = useState<Section>("profile");
   const { profile, user, isAdmin, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
+  const isStrictAdmin = profile?.role === "admin" || profile?.role === "super_admin";
+  const visible = sections.filter((s) => (s.key !== "leave" || isAdmin) && (s.key !== "workflow" || isStrictAdmin));
 
   return (
     <AnimatedPage>
-      <h1 className="font-heading text-[28px] font-bold text-ink-primary mb-6">Settings</h1>
+      <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary mb-6">Settings</h1>
       <div className="flex flex-col md:flex-row gap-6">
         {/* Sidebar */}
-        <div className="md:w-[200px] flex md:flex-col gap-1 overflow-x-auto md:overflow-visible border-b md:border-b-0 md:border-r border-border pb-2 md:pb-0 md:pr-4">
-          {sections.filter(s => s.key !== "leave" || isAdmin).map((s) => (
+        <MobileSegments
+          items={visible.map((s) => ({ key: s.key, label: s.label }))}
+          value={active}
+          onChange={(k) => setActive(k as Section)}
+        />
+        <div className="hidden md:flex md:w-[200px] md:flex-col gap-1 md:border-r border-border md:pr-4">
+          {visible.map((s) => (
             <button key={s.key} onClick={() => setActive(s.key)}
               className={cn(
                 "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
@@ -61,6 +71,7 @@ export default function SettingsPage() {
           {active === "notifications" && <NotificationSettings />}
           {active === "leave" && isAdmin && <LeavePolicySettings />}
           {active === "security" && <SecuritySettings />}
+          {active === "workflow" && isStrictAdmin && <WorkflowPeopleSettings />}
         </div>
       </div>
     </AnimatedPage>
@@ -94,7 +105,7 @@ function ProfileSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-card bg-card p-6 shadow-card">
+      <div className="rounded-card bg-card p-4 sm:p-6 shadow-card">
         <div className="flex items-center gap-4 mb-6">
           <AvatarUpload size="xl" />
           <div>
@@ -125,7 +136,7 @@ function ProfileSettings() {
         </div>
       </div>
 
-      <div className="rounded-card bg-card p-6 shadow-card">
+      <div className="rounded-card bg-card p-4 sm:p-6 shadow-card">
         <h3 className="font-heading text-lg font-semibold text-ink-primary mb-4">Change Password</h3>
         <div className="space-y-3">
           <Input type="password" placeholder="New password (min 8 chars)" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="h-10" />
@@ -170,7 +181,7 @@ function NotificationSettings() {
   const visiblePrefs = notifPrefs.filter(p => !p.adminOnly || isAdmin);
 
   return (
-    <div className="rounded-card bg-card p-6 shadow-card">
+    <div className="rounded-card bg-card p-4 sm:p-6 shadow-card">
       <h3 className="font-heading text-lg font-semibold text-ink-primary mb-1">Notification Preferences</h3>
       <p className="text-sm text-ink-muted mb-6">Choose what you want to be notified about</p>
       <div className="space-y-4">
@@ -228,7 +239,7 @@ function LeavePolicySettings() {
   };
 
   return (
-    <div className="rounded-card bg-card p-6 shadow-card">
+    <div className="rounded-card bg-card p-4 sm:p-6 shadow-card">
       <h3 className="font-heading text-lg font-semibold text-ink-primary mb-1">Leave Policy</h3>
       <p className="text-sm text-ink-muted mb-6">Configure default leave allowances per year</p>
       <div className="space-y-4">
@@ -257,7 +268,7 @@ function SecuritySettings() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-card bg-card p-6 shadow-card">
+      <div className="rounded-card bg-card p-4 sm:p-6 shadow-card">
         <h3 className="font-heading text-lg font-semibold text-ink-primary mb-4">Account Actions</h3>
         <Button variant="outline" onClick={() => {
           if (confirm("Sign out from all devices?")) signOut();

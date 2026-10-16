@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Download, Trash2, Paperclip, Pencil, Check, ChevronDown, CornerDownRight, FolderKanban, ArrowRightCircle } from "lucide-react";
+import { X, Send, Download, Trash2, Paperclip, Pencil, Check, ChevronDown, CornerDownRight, FolderKanban, ArrowRightCircle, Eye } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { format, differenceInDays } from "date-fns";
+import { format, differenceInDays, isAfter } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import StatusBadge from "@/components/StatusBadge";
@@ -172,7 +172,7 @@ function CommentItem({
 export default function TaskDetailModal({ task, onClose }: { task: any; onClose: () => void }) {
   const { user, isAdmin, profile } = useAuth();
   const queryClient = useQueryClient();
-  const canManageTasks = profile?.role === "admin" || profile?.role === "manager";
+  const canManageTasks = (profile?.role === "admin" || profile?.role === "super_admin") || profile?.role === "manager";
   // Co-owner: assigned with co_owner role — can view but not edit progress
   const isCoOwnerOnly = !canManageTasks &&
     task?.task_assignees?.some((a: any) => a.user_id === user?.id && a.assignee_role === "co_owner") === true &&
@@ -213,6 +213,10 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
   const [moveProjectId, setMoveProjectId] = useState<string>(task?.project_id ?? "");
   const [moveTeamId, setMoveTeamId] = useState<string>(task?.project_team_id ?? "");
 
+  // Edit-mode project/team state
+  const [editProjectId, setEditProjectId] = useState<string>(task?.project_id ?? "");
+  const [editTeamId, setEditTeamId] = useState<string>(task?.project_team_id ?? "");
+
   // Sync edit fields whenever the task prop changes (e.g. opening a different task)
   useEffect(() => {
     if (!task) return;
@@ -232,6 +236,8 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
     setEditMode(false);
     setMoveProjectId(task.project_id ?? "");
     setMoveTeamId(task.project_team_id ?? "");
+    setEditProjectId(task.project_id ?? "");
+    setEditTeamId(task.project_team_id ?? "");
   }, [task?.id]);
 
   useEffect(() => {
@@ -280,7 +286,7 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
       return roots;
     },
     enabled: !!task,
-    refetchInterval: 10000,
+    refetchInterval: 60000,
   });
 
   const { data: attachments = [] } = useQuery({
@@ -315,7 +321,7 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
       const { data } = await supabase.from("projects").select("id, name, color").order("name");
       return data ?? [];
     },
-    enabled: moveOpen && isAdmin,
+    enabled: (moveOpen || editMode) && isAdmin,
   });
 
   const { data: allProjectTeams = [] } = useQuery({
@@ -324,7 +330,7 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
       const { data } = await supabase.from("project_teams").select("id, project_id, name").order("name");
       return data ?? [];
     },
-    enabled: moveOpen && isAdmin,
+    enabled: (moveOpen || editMode) && isAdmin,
   });
 
   // Look up the task's current project (for display even outside the move popover)
@@ -377,7 +383,8 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
 
   const updateProgressStatus = useMutation({
     mutationFn: async () => {
-      await supabase.from("tasks").update({ progress, status }).eq("id", task.id);
+      const completedAt = status?.toLowerCase() === "completed" ? new Date().toISOString() : null;
+      await supabase.from("tasks").update({ progress, status, completed_at: completedAt }).eq("id", task.id);
     },
     onSuccess: () => { invalidateTasks(); toast.success("Task updated"); },
     onError: () => toast.error("Failed to update task"),
@@ -397,6 +404,8 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
           deadline: editDeadline || null,
           category: editCategory.trim() || null,
           assigned_to: editAssignees[0],
+          project_id: editProjectId || null,
+          project_team_id: editProjectId ? (editTeamId || null) : null,
         })
         .eq("id", task.id);
       if (taskError) throw taskError;
@@ -415,7 +424,14 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
 
       // Notifications are handled by the DB trigger — no manual insert needed.
     },
-    onSuccess: () => { invalidateTasks(); setEditMode(false); toast.success("Task saved successfully"); },
+    onSuccess: () => {
+      invalidateTasks();
+      queryClient.invalidateQueries({ queryKey: ["my-team-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-team-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["project-of-task"] });
+      setEditMode(false);
+      toast.success("Task saved successfully");
+    },
     onError: (e: any) => toast.error(e.message ?? "Failed to save task"),
   });
 
@@ -539,6 +555,8 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
     setEditCategory(task?.category ?? "");
     setEditAssignees(task?.task_assignees?.filter((a: any) => a.assignee_role !== "co_owner").map((a: any) => a.user_id) ?? []);
     setEditCoOwners(task?.task_assignees?.filter((a: any) => a.assignee_role === "co_owner").map((a: any) => a.user_id) ?? []);
+    setEditProjectId(task?.project_id ?? "");
+    setEditTeamId(task?.project_team_id ?? "");
     setAssigneeDropdownOpen(false);
     setCoOwnerDropdownOpen(false);
     setAssigneeSearch("");
@@ -561,7 +579,7 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
         />
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-[720px] max-h-[90vh] overflow-y-auto rounded-modal bg-card shadow-modal mx-4"
+          className="relative w-full max-w-[720px] max-h-[90vh] overflow-y-auto rounded-modal bg-card shadow-modal mx-4 pt-3 md:pt-0"
         >
           {/* Header */}
           <div className="sticky top-0 bg-card z-10 flex items-center justify-between p-5 border-b border-border gap-3">
@@ -617,7 +635,7 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
             </div>
           </div>
 
-          <div className="grid md:grid-cols-5 gap-6 p-5">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 p-4 sm:p-5">
             {/* Left column */}
             <div className="md:col-span-3 space-y-5">
               {/* Move-to-Project inline panel (admin only) */}
@@ -759,6 +777,65 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
                   </div>
                 </div>
               )}
+
+              {editMode && isAdmin && (
+                <div>
+                  <label className="text-sm font-medium text-ink-primary mb-1.5 block flex items-center gap-1.5">
+                    <FolderKanban className="h-4 w-4 text-primary" />
+                    Project
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Select
+                      value={editProjectId || "none"}
+                      onValueChange={(v) => {
+                        setEditProjectId(v === "none" ? "" : v);
+                        setEditTeamId("");
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="No project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No project</SelectItem>
+                        {allProjects.map((p: any) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: p.color }}
+                              />
+                              {p.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {editProjectId &&
+                      allProjectTeams.filter((t: any) => t.project_id === editProjectId).length > 0 && (
+                        <Select
+                          value={editTeamId || "none"}
+                          onValueChange={(v) => setEditTeamId(v === "none" ? "" : v)}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="No team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No team</SelectItem>
+                            {allProjectTeams
+                              .filter((t: any) => t.project_id === editProjectId)
+                              .map((t: any) => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                  </div>
+                </div>
+              )}
+
+
 
               {/* Progress & Status */}
               <div>
@@ -1093,13 +1170,21 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
                         {task.deadline ? format(new Date(task.deadline), "MMM d, yyyy") : "None"}
                       </p>
                       {daysLeft !== null && (
-                        <p className={`text-xs ${daysLeft < 0 ? "text-destructive" : "text-ink-muted"}`}>
-                          {daysLeft < 0
-                            ? `Overdue by ${Math.abs(daysLeft)} days`
-                            : daysLeft === 0
-                            ? "Due today"
-                            : `${daysLeft} days remaining`}
-                        </p>
+                        task.status?.toLowerCase() !== "completed" ? (
+                          <p className={`text-xs ${daysLeft < 0 ? "text-destructive" : "text-ink-muted"}`}>
+                            {daysLeft < 0
+                              ? `Overdue by ${Math.abs(daysLeft)} days`
+                              : daysLeft === 0
+                              ? "Due today"
+                              : `${daysLeft} days remaining`}
+                          </p>
+                        ) : (
+                          task.completed_at && isAfter(new Date(task.completed_at), new Date(task.deadline)) && (
+                            <p className="text-xs text-destructive">
+                              {`Overdue by ${differenceInDays(new Date(task.completed_at), new Date(task.deadline))} days`}
+                            </p>
+                          )
+                        )
                       )}
                     </>
                   )}
@@ -1166,8 +1251,18 @@ export default function TaskDetailModal({ task, onClose }: { task: any; onClose:
                             href={att.file_url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            className="text-primary hover:text-primary/80"
+                            title="View"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </a>
+                          <a
+                            href={att.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             download
                             className="text-primary hover:text-primary/80"
+                            title="Download"
                           >
                             <Download className="h-3.5 w-3.5" />
                           </a>
