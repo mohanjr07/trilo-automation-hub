@@ -102,6 +102,7 @@ export default function UsersPage() {
       setSelectedUser(null);
       setEditUser(null);
     },
+    onError: (e: any) => toast.error("Could not delete the user: " + (e?.message ?? "unknown error")),
   });
 
   const resetPassword = async (email: string) => {
