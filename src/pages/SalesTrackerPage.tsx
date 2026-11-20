@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { halfLabel } from "@/lib/visitHalf";
-import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square, Pencil, Trash2 } from "lucide-react";
+import { Building2, MapPin, Palmtree, User as UserIcon, Plus, Play, Square, Pencil, Trash2, Phone, ExternalLink } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import AnimatedPage, { staggerContainer, staggerItem } from "@/components/AnimatedPage";
@@ -277,9 +278,79 @@ type TeamRequestStop = MyRequestStop & { profiles: { full_name: string | null } 
 /** Team-head-facing history: ALL of the team's site visits (any status —
  * pending, approved, rejected — and any visit progress), not just the
  * pending-approval queue. Read-only. */
+/** Full details of one trip (all its stops) — opened by tapping a team site visit. */
+function SiteVisitPreview({ group, onClose }: { group: TeamRequestStop[] | null; onClose: () => void }) {
+  const primary = group?.[0];
+  return (
+    <Dialog open={!!group} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
+        {primary && group && (
+          <>
+            <DialogHeader>
+              <DialogTitle>{primary.profiles?.full_name ?? "A team member"} — site visit</DialogTitle>
+              <DialogDescription>
+                {format(new Date(primary.planned_at), "EEE, d MMM yyyy")} · {halfLabel(primary.planned_at)}
+                {group.length > 1 ? ` · ${group.length} sites` : ""}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {group.map((stop, i) => {
+                const meta = REQUEST_STATUS_META[stop.status];
+                const visitMeta = VISIT_STATUS_META[stop.visit_status];
+                const rows: Array<[string, React.ReactNode]> = [
+                  ["Location", stop.location ? (
+                    <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.location)}`} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-primary hover:underline">
+                      {stop.location} <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  ) : null],
+                  ["Contact", stop.contact_person],
+                  ["Phone", stop.contact_phone ? (
+                    <a href={`tel:${stop.contact_phone.replace(/\s+/g, "")}`} className="inline-flex items-center gap-1 text-primary hover:underline">
+                      <Phone className="h-3 w-3" /> {stop.contact_phone}
+                    </a>
+                  ) : null],
+                  ["Purpose", stop.purpose],
+                  ["Planned", `${format(new Date(stop.planned_at), "d MMM yyyy, h:mm a")} · ${halfLabel(stop.planned_at)}`],
+                  ["Visit started", stop.visit_started_at ? format(new Date(stop.visit_started_at), "d MMM, h:mm a") : null],
+                  ["Visit ended", stop.visit_ended_at ? format(new Date(stop.visit_ended_at), "d MMM, h:mm a") : null],
+                  ["Notes", stop.notes],
+                  [stop.status === "rejected" ? "Reason" : "Note", stop.decision_note],
+                ];
+                return (
+                  <div key={stop.id} className="rounded-lg border border-border p-3">
+                    <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-ink-primary">
+                        {group.length > 1 ? `${i + 1}. ` : ""}{stop.site_name}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {meta && <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", meta.bg, meta.text)}>{meta.label}</span>}
+                        {visitMeta && <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", visitMeta.bg, visitMeta.text)}>{visitMeta.label}</span>}
+                      </div>
+                    </div>
+                    <dl className="space-y-1.5 text-sm">
+                      {rows.filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => (
+                        <div key={k} className="grid grid-cols-[96px_1fr] gap-2">
+                          <dt className="text-ink-muted">{k}</dt>
+                          <dd className="min-w-0 whitespace-pre-wrap break-words text-ink-primary">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
   const queryClient = useQueryClient();
   const [deletingTripId, setDeletingTripId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<TeamRequestStop[] | null>(null);
 
   const { data: rows = [] } = useQuery({
     queryKey: ["site-visit-requests", "team", teamIds],
@@ -330,12 +401,16 @@ function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
 
   return (
     <div className="space-y-2">
+      <SiteVisitPreview group={preview} onClose={() => setPreview(null)} />
       {groups.map((group) => {
         const primary = group[0];
         const meta = REQUEST_STATUS_META[primary.status];
         const visitMeta = VISIT_STATUS_META[primary.visit_status];
         return (
-          <div key={primary.trip_group_id} className="rounded-lg border border-border p-3">
+          <div key={primary.trip_group_id} role="button" tabIndex={0} title="Tap to see details"
+            onClick={() => setPreview(group)}
+            onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setPreview(group); } }}
+            className="cursor-pointer rounded-lg border border-border p-3 transition-colors hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-ink-primary">
@@ -368,7 +443,7 @@ function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
               </p>
             )}
             {deletingTripId === primary.trip_group_id ? (
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
                 <span className="text-xs text-ink-muted">Delete this site visit? This can't be undone.</span>
                 <Button size="sm" variant="outline" onClick={() => setDeletingTripId(null)}>
                   Cancel
@@ -383,7 +458,7 @@ function TeamSiteVisits({ teamIds }: { teamIds: string[] }) {
                 </Button>
               </div>
             ) : (
-              <div className="mt-2.5">
+              <div className="mt-2.5" onClick={(e) => e.stopPropagation()}>
                 <Button
                   size="sm"
                   variant="ghost"
