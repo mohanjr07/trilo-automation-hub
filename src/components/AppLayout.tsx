@@ -168,6 +168,8 @@ export default function AppLayout() {
   }, []);
   // Close the phone menu whenever the page changes
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
+  // every new page starts at the top (no landing half-way down the previous page's scroll)
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); }, [location.pathname]);
   useEffect(() => {
     const observer = new MutationObserver(() => {
       setIsDark(document.documentElement.classList.contains("dark"));
