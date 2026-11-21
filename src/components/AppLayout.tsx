@@ -12,6 +12,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import UserAvatar from "@/components/UserAvatar";
 import NotificationBell from "@/components/NotificationBell";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import ThemeToggle from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 import { canSeeOvertime } from "@/pages/OvertimePage";
@@ -370,7 +371,9 @@ export default function AppLayout() {
         )}
         <main className="flex-1 px-4 pt-2 pb-32 md:px-8 md:py-8 max-w-[1280px] mx-auto w-full">
           <InstallAppBanner />
-          <Outlet />
+          <ErrorBoundary inline key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       {/* Mobile bottom tab bar — floating rounded bar, dark pill on the active tab */}
