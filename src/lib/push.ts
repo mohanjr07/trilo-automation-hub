@@ -19,6 +19,12 @@ export async function initPush() {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "android") return;
 
   try {
+    // Opening the app clears its notifications from the phone's tray, which also
+    // resets the red number on the app icon (it would otherwise stay until the next push).
+    const clearTray = () => { PushNotifications.removeAllDeliveredNotifications().catch(() => {}); };
+    clearTray();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) clearTray(); });
+
     let permStatus = await PushNotifications.checkPermissions();
 
     if (permStatus.receive === "prompt") {
