@@ -109,7 +109,7 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!user) return;
     const channel = supabase
-      .channel("user-notifications")
+      .channel(`user-notifications-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         {
