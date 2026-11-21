@@ -18,18 +18,23 @@ export default function LiveSync() {
   useEffect(() => {
     if (!user) return;
     let timer: number | undefined;
+    let pending = false;
+    const run = () => qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "form-template" });
     const refresh = () => {
+      // app in the background → do nothing now, refresh once when it comes back
+      if (document.hidden) { pending = true; return; }
       window.clearTimeout(timer);
       // a burst of changes → one refresh; Word templates are never re-downloaded
-      timer = window.setTimeout(() => {
-        qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "form-template" });
-      }, 700);
+      timer = window.setTimeout(run, 1500);
     };
+    const onVisible = () => { if (!document.hidden && pending) { pending = false; run(); } };
+    document.addEventListener("visibilitychange", onVisible);
     const channel = supabase
       .channel(`live-sync-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public" }, refresh)
       .subscribe();
     return () => {
+      document.removeEventListener("visibilitychange", onVisible);
       window.clearTimeout(timer);
       supabase.removeChannel(channel);
     };

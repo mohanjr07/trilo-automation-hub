@@ -53,6 +53,8 @@ const queryClient = new QueryClient({
     queries: {
       // live updates come from <LiveSync/> (one realtime connection per device);
       // this slow poll is only a safety net. Data also refreshes when the app comes back.
+      staleTime: 30_000,          // data younger than 30 s is shown at once, without fetching again
+      gcTime: 30 * 60_000,        // keep data for 30 min so going back to a page is instant
       refetchInterval: 120_000,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
