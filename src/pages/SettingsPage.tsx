@@ -1,7 +1,7 @@
 import { useState } from "react";
 import MobileSegments from "@/components/MobileSegments";
 import { motion } from "framer-motion";
-import { User, Bell, Calendar, Lock, Workflow } from "lucide-react";
+import { User, Bell, Calendar, Lock, Workflow, Palette } from "lucide-react";
 import WorkflowPeopleSettings from "@/components/WorkflowPeopleSettings";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,10 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import ThemeSettings from "@/components/ThemeSettings";
 
 const sections = [
   { key: "profile", label: "Profile", icon: User },
   { key: "notifications", label: "Notifications", icon: Bell },
+  { key: "appearance", label: "Appearance", icon: Palette },
   { key: "leave", label: "Leave Policy", icon: Calendar },
   { key: "workflow", label: "Workflow people", icon: Workflow },
   { key: "security", label: "Security", icon: Lock },
@@ -69,6 +71,7 @@ export default function SettingsPage() {
         <div className="flex-1 max-w-2xl">
           {active === "profile" && <ProfileSettings />}
           {active === "notifications" && <NotificationSettings />}
+          {active === "appearance" && <ThemeSettings />}
           {active === "leave" && isAdmin && <LeavePolicySettings />}
           {active === "security" && <SecuritySettings />}
           {active === "workflow" && isStrictAdmin && <WorkflowPeopleSettings />}
