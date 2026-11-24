@@ -1,7 +1,8 @@
 import { useState } from "react";
 import MobileSegments from "@/components/MobileSegments";
+import AppUpdateBanner from "@/components/AppUpdateBanner";
 import { motion } from "framer-motion";
-import { User, Bell, Calendar, Lock, Workflow, Palette } from "lucide-react";
+import { User, Bell, Calendar, Lock, Workflow, Palette, Download } from "lucide-react";
 import WorkflowPeopleSettings from "@/components/WorkflowPeopleSettings";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +20,7 @@ const sections = [
   { key: "profile", label: "Profile", icon: User },
   { key: "notifications", label: "Notifications", icon: Bell },
   { key: "appearance", label: "Appearance", icon: Palette },
+  { key: "updates", label: "App updates", icon: Download },
   { key: "leave", label: "Leave Policy", icon: Calendar },
   { key: "workflow", label: "Workflow people", icon: Workflow },
   { key: "security", label: "Security", icon: Lock },
@@ -47,6 +49,7 @@ export default function SettingsPage() {
   return (
     <AnimatedPage>
       <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary mb-6">Settings</h1>
+      {active !== "updates" && <AppUpdateBanner className="mb-6" />}
       <div className="flex flex-col md:flex-row gap-6">
         {/* Sidebar */}
         <MobileSegments
@@ -72,6 +75,7 @@ export default function SettingsPage() {
           {active === "profile" && <ProfileSettings />}
           {active === "notifications" && <NotificationSettings />}
           {active === "appearance" && <ThemeSettings />}
+          {active === "updates" && <AppUpdateBanner showUpToDate />}
           {active === "leave" && isAdmin && <LeavePolicySettings />}
           {active === "security" && <SecuritySettings />}
           {active === "workflow" && isStrictAdmin && <WorkflowPeopleSettings />}

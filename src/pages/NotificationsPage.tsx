@@ -1,5 +1,6 @@
 import { useAuth } from "@/contexts/AuthContext";
 import MobileSegments from "@/components/MobileSegments";
+import AppUpdateBanner from "@/components/AppUpdateBanner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow, isToday, isYesterday, format } from "date-fns";
@@ -76,6 +77,7 @@ export default function NotificationsPage() {
 
   return (
     <AnimatedPage>
+      <AppUpdateBanner className="mb-4" />
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5 md:mb-6">
         <div className="flex items-center gap-3">
           <h1 className="font-heading text-2xl sm:text-[28px] font-bold text-ink-primary">Notifications</h1>
